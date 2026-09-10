@@ -4,6 +4,7 @@ import a.a.a.mB
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.DialogInterface
 import android.content.Intent
 import android.net.Uri
 import android.util.AttributeSet
@@ -75,25 +76,34 @@ class MainDrawer @JvmOverloads constructor(context: Context, attrs: AttributeSet
 
     private fun showLanguageAndThemePicker(activity: Activity) {
         val languages = arrayOf(
-            getString(R.string.language_english), getString(R.string.language_indonesian), getString(R.string.language_chinese),
-            getString(R.string.language_arabic), getString(R.string.language_spanish), getString(R.string.language_javanese)
+            activity.getString(R.string.language_english), activity.getString(R.string.language_indonesian), activity.getString(R.string.language_chinese),
+            activity.getString(R.string.language_arabic), activity.getString(R.string.language_spanish), activity.getString(R.string.language_javanese)
         )
         val codes = arrayOf(LocaleManager.ENGLISH, LocaleManager.INDONESIAN, LocaleManager.CHINESE, LocaleManager.ARABIC, LocaleManager.SPANISH, LocaleManager.JAVANESE)
-        MaterialAlertDialogBuilder(activity).setTitle(R.string.title_language).setSingleChoiceItems(languages, codes.indexOf(LocaleManager.getLanguage(activity))) { dialog, which ->
-            LocaleManager.setLanguage(activity, codes[which])
-            dialog.dismiss()
-            activity.recreate()
-        }.setNeutralButton(R.string.title_editor_theme) { _, _ -> showThemePicker(activity) }.setNegativeButton(R.string.common_word_cancel, null).show()
+        val selected = codes.indexOf(LocaleManager.getLanguage(activity))
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.title_language)
+            .setSingleChoiceItems(languages, selected) { dialog: DialogInterface, which: Int ->
+                LocaleManager.setLanguage(activity, codes[which])
+                dialog.dismiss()
+                activity.recreate()
+            }
+            .setNeutralButton(R.string.title_editor_theme) { _: DialogInterface, _: Int -> showThemePicker(activity) }
+            .setNegativeButton(R.string.common_word_cancel, null)
+            .show()
     }
 
     private fun showThemePicker(activity: Activity) {
-        val themes = arrayOf(getString(R.string.theme_rainbow), getString(R.string.theme_one_dark_pro), getString(R.string.theme_synthwave), getString(R.string.theme_tokyo_night))
-        MaterialAlertDialogBuilder(activity).setTitle(R.string.title_editor_theme).setItems(themes) { _, which ->
-            activity.getSharedPreferences("daygreen_editor_theme", Context.MODE_PRIVATE).edit().putInt("selected", which).apply()
-            // Presets with dark editor chrome; the selected preset is persisted for the editor.
-            ThemeManager.applyTheme(activity, if (which == 0) ThemeManager.THEME_LIGHT else ThemeManager.THEME_DARK)
-            activity.recreate()
-        }.setNegativeButton(R.string.common_word_cancel, null).show()
+        val themes = arrayOf(activity.getString(R.string.theme_rainbow), activity.getString(R.string.theme_one_dark_pro), activity.getString(R.string.theme_synthwave), activity.getString(R.string.theme_tokyo_night))
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.title_editor_theme)
+            .setItems(themes) { _: DialogInterface, which: Int ->
+                activity.getSharedPreferences("daygreen_editor_theme", Context.MODE_PRIVATE).edit().putInt("selected", which).apply()
+                ThemeManager.applyTheme(activity, if (which == 0) ThemeManager.THEME_LIGHT else ThemeManager.THEME_DARK)
+                activity.recreate()
+            }
+            .setNegativeButton(R.string.common_word_cancel, null)
+            .show()
     }
 
     private fun openUrl(url: String) { unwrap(context)?.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
