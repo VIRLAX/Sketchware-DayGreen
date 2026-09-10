@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="menu_language_theme">Language &amp; Theme</string>
+    <string name="title_language">Choose language</string>
+    <string name="title_editor_theme">Choose editor theme</string>
+    <string name="language_english">English</string>
+    <string name="language_indonesian">Indonesian</string>
+    <string name="language_chinese">Chinese (Simplified)</string>
+    <string name="language_arabic">Arabic</string>
+    <string name="language_spanish">Spanish</string>
+    <string name="language_javanese">Javanese</string>
+    <string name="theme_rainbow">Rainbow</string>
+    <string name="theme_one_dark_pro">One Dark Pro</string>
+    <string name="theme_synthwave">SynthWave ’84</string>
+    <string name="theme_tokyo_night">Tokyo Night</string>
+</resources>
