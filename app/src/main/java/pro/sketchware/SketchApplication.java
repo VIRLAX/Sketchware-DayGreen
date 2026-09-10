@@ -7,25 +7,25 @@ import android.os.Process;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
-
 import com.besome.sketch.tools.CollectErrorActivity;
-
 import extensions.anbui.daydream.setup.DRSetup;
+import pro.sketchware.utility.LocaleManager;
 import pro.sketchware.utility.theme.ThemeManager;
 
 public class SketchApplication extends Application {
     private static Context mApplicationContext;
+    public static Context getContext() { return mApplicationContext; }
 
-    public static Context getContext() {
-        return mApplicationContext;
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(LocaleManager.apply(base));
     }
 
     @Override
     public void onCreate() {
         mApplicationContext = getApplicationContext();
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
-            @Override
-            public void uncaughtException(@NonNull Thread thread, @NonNull Throwable throwable) {
+            @Override public void uncaughtException(@NonNull Thread thread, @NonNull Throwable throwable) {
                 Intent intent = new Intent(getApplicationContext(), CollectErrorActivity.class);
                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                 intent.putExtra("error", Log.getStackTraceString(throwable));
@@ -36,7 +36,6 @@ public class SketchApplication extends Application {
         });
         super.onCreate();
         ThemeManager.applyTheme(this, ThemeManager.getCurrentTheme(this));
-
         DRSetup.startUp(this);
     }
 }
