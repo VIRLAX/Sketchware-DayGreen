@@ -14,6 +14,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Remove incompatible lifecycle override
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("app/src/main/java/mod/hey/studios/code/SrcCodeEditor.java")
+          source = path.read_text()
+          start = source.find("    @Override\n    protected void onDestroy() {")
+          if start != -1:
+              end = source.find("    private boolean isFileInLayoutFolder()", start)
+              if end == -1:
+                  raise SystemExit("Could not find end of onDestroy block")
+              path.write_text(source[:start] + source[end:])
+              print("Removed incompatible onDestroy override")
+          else:
+              print("onDestroy override already absent")
+          PY
+
       - name: Check if versionCode changed (release push)
         id: check_version
         run: |
