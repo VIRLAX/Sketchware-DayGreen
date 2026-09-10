@@ -15,39 +15,30 @@ import androidx.annotation.IdRes
 import androidx.annotation.StringRes
 import androidx.core.view.WindowInsetsCompat
 import androidx.drawerlayout.widget.DrawerLayout
-
 import com.besome.sketch.help.ProgramInfoActivity
 import com.besome.sketch.tools.NewKeyStoreActivity
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.theme.overlay.MaterialThemeOverlay
-
 import dev.chrisbanes.insetter.Insetter
 import dev.chrisbanes.insetter.Side
-
 import extensions.anbui.daydream.activity.DayDreamCleanUp
 import extensions.anbui.daydream.activity.project.settings.DayDreamUniversalSettingsActivity
-
 import mod.hilal.saif.activities.tools.AppSettings
-
 import pro.sketchware.R
-import pro.sketchware.activities.about.AboutActivity
+import pro.sketchware.utility.LocaleManager
 import pro.sketchware.utility.UI
+import pro.sketchware.utility.theme.ThemeManager
 
 class MainDrawer @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = R.attr.navigationViewStyle) : NavigationView(MaterialThemeOverlay.wrap(context, attrs, defStyleAttr, DEF_STYLE_RES), attrs, defStyleAttr) {
-
-    companion object {
-        private val DEF_STYLE_RES = R.style.Widget_SketchwarePro_NavigationView_Main
-    }
+    companion object { private val DEF_STYLE_RES = R.style.Widget_SketchwarePro_NavigationView_Main }
 
     init {
         val ctx = getContext()
         val layoutDirection = ctx.resources.configuration.layoutDirection
-
         Insetter.builder().margin(WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.navigationBars(), Side.create(layoutDirection == LAYOUT_DIRECTION_LTR, false, layoutDirection == LAYOUT_DIRECTION_RTL, false)).applyToView(this)
-
         val headerView = LayoutInflater.from(ctx).inflate(R.layout.main_drawer_header, null) as ViewGroup
         headerView.findViewById<View>(R.id.status_bar_overlapper).minimumHeight = UI.getStatusBarHeight(ctx)
-
         addHeaderView(headerView)
         inflateMenu(R.menu.main_drawer_menu)
         setNavigationItemSelectedListener { item ->
@@ -66,68 +57,46 @@ class MainDrawer @JvmOverloads constructor(context: Context, attrs: AttributeSet
                 R.id.social_telegram -> R.string.link_telegram_invite
                 else -> -1
             }
-
-            if (url != -1) {
-                openUrl(context.getString(url))
-            }
+            if (url != -1) openUrl(context.getString(url))
         }
     }
 
     private fun initializeDrawerItems(@IdRes id: Int) {
         val activity = unwrap(context) ?: return
         when (id) {
-            R.id.program_info -> {
-                val intent = Intent(activity, ProgramInfoActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-                }
-                activity.startActivityForResult(intent, 105)
-            }
-            R.id.daydream_cleanup -> {
-                activity.startActivity(Intent(activity, DayDreamCleanUp::class.java))
-            }
-            R.id.app_settings -> {
-                val intent = Intent(activity, AppSettings::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-                }
-                activity.startActivity(intent)
-            }
-            R.id.create_release_keystore -> {
-                val intent = Intent(activity, NewKeyStoreActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-                }
-                activity.startActivity(intent)
-            }
-            R.id.daydream_settings -> {
-                val intent = Intent(activity, DayDreamUniversalSettingsActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-                }
-                activity.startActivity(intent)
-            }
+            R.id.program_info -> activity.startActivityForResult(Intent(activity, ProgramInfoActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP }, 105)
+            R.id.daydream_cleanup -> activity.startActivity(Intent(activity, DayDreamCleanUp::class.java))
+            R.id.app_settings -> activity.startActivity(Intent(activity, AppSettings::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP })
+            R.id.language_theme_settings -> showLanguageAndThemePicker(activity)
+            R.id.create_release_keystore -> activity.startActivity(Intent(activity, NewKeyStoreActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP })
+            R.id.daydream_settings -> activity.startActivity(Intent(activity, DayDreamUniversalSettingsActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP })
         }
     }
 
-    private fun openUrl(url: String) {
-        val activity = unwrap(context) ?: return
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        activity.startActivity(intent)
+    private fun showLanguageAndThemePicker(activity: Activity) {
+        val languages = arrayOf(
+            getString(R.string.language_english), getString(R.string.language_indonesian), getString(R.string.language_chinese),
+            getString(R.string.language_arabic), getString(R.string.language_spanish), getString(R.string.language_javanese)
+        )
+        val codes = arrayOf(LocaleManager.ENGLISH, LocaleManager.INDONESIAN, LocaleManager.CHINESE, LocaleManager.ARABIC, LocaleManager.SPANISH, LocaleManager.JAVANESE)
+        MaterialAlertDialogBuilder(activity).setTitle(R.string.title_language).setSingleChoiceItems(languages, codes.indexOf(LocaleManager.getLanguage(activity))) { dialog, which ->
+            LocaleManager.setLanguage(activity, codes[which])
+            dialog.dismiss()
+            activity.recreate()
+        }.setNeutralButton(R.string.title_editor_theme) { _, _ -> showThemePicker(activity) }.setNegativeButton(R.string.common_word_cancel, null).show()
     }
 
-    private fun unwrap(context: Context): Activity? {
-        var currentContext: Context? = context
-        while (currentContext !is Activity && currentContext is ContextWrapper) {
-            currentContext = currentContext.baseContext
-        }
-        return currentContext as? Activity
+    private fun showThemePicker(activity: Activity) {
+        val themes = arrayOf(getString(R.string.theme_rainbow), getString(R.string.theme_one_dark_pro), getString(R.string.theme_synthwave), getString(R.string.theme_tokyo_night))
+        MaterialAlertDialogBuilder(activity).setTitle(R.string.title_editor_theme).setItems(themes) { _, which ->
+            activity.getSharedPreferences("daygreen_editor_theme", Context.MODE_PRIVATE).edit().putInt("selected", which).apply()
+            // Presets with dark editor chrome; the selected preset is persisted for the editor.
+            ThemeManager.applyTheme(activity, if (which == 0) ThemeManager.THEME_LIGHT else ThemeManager.THEME_DARK)
+            activity.recreate()
+        }.setNegativeButton(R.string.common_word_cancel, null).show()
     }
 
-    private fun close() {
-        var p: ViewParent? = parent
-        while (p != null) {
-            if (p is DrawerLayout) {
-                p.closeDrawer(this)
-                return
-            }
-            p = p.parent
-        }
-    }
+    private fun openUrl(url: String) { unwrap(context)?.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+    private fun unwrap(context: Context): Activity? { var current: Context? = context; while (current !is Activity && current is ContextWrapper) current = current.baseContext; return current as? Activity }
+    private fun close() { var p: ViewParent? = parent; while (p != null) { if (p is DrawerLayout) { p.closeDrawer(this); return }; p = p.parent } }
 }
