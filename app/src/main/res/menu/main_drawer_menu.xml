@@ -2,7 +2,7 @@
     <item android:id="@+id/program_info" android:icon="@drawable/ic_sketchware_24" android:title="Daygreen information" />
     <item android:id="@+id/daydream_cleanup" android:icon="@drawable/cleaning_services_24px" android:title="Clean up" />
     <item android:id="@+id/app_settings" android:icon="@drawable/ic_mtrl_settings" android:title="Settings" />
-    <item android:id="@+id/language_theme_settings" android:icon="@drawable/palette_24px" android:title="@string/menu_language_theme" />
+    <item android:id="@+id/language_theme_settings" android:icon="@drawable/ic_mtrl_palette" android:title="@string/menu_language_theme" />
     <item android:id="@+id/daydream_settings" android:icon="@drawable/wand_stars_24px" android:title="@string/name_menu_green" />
     <item android:id="@+id/create_release_keystore" android:icon="@drawable/ic_mtrl_key" android:title="Create keystore" />
     <item android:title="Related links" android:visible="true"><menu>
