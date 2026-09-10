@@ -1,76 +1,98 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:background="?attr/colorSurface"
-    android:orientation="vertical">
+    android:background="?attr/colorSurface">
 
-    <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/app_bar_layout"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/colorSurfaceContainer">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
+        <com.google.android.material.appbar.AppBarLayout
+            android:id="@+id/app_bar_layout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:menu="@menu/menu_code_editor_hs"
-            tools:title="MainActivity.java" />
+            android:background="?attr/colorSurfaceContainer">
 
-        <com.google.android.material.divider.MaterialDivider
+            <com.google.android.material.appbar.MaterialToolbar
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:menu="@menu/menu_code_editor_hs"
+                tools:title="test.xml" />
+
+            <com.google.android.material.divider.MaterialDivider
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:dividerColor="?attr/colorSurfaceContainerHighest" />
+
+        </com.google.android.material.appbar.AppBarLayout>
+
+        <pro.sketchware.editor.SketchwareCodeEditor
+            android:id="@+id/editor"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:dividerColor="?attr/colorSurfaceContainerHighest" />
-    </com.google.android.material.appbar.AppBarLayout>
+            android:layout_height="match_parent" />
 
-    <pro.sketchware.editor.SketchwareCodeEditor
-        android:id="@+id/editor"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+    </LinearLayout>
 
-    <!-- Real-time Layout Preview Panel -->
+    <!-- Bottom Sheet: Real-time Layout Preview -->
     <LinearLayout
         android:id="@+id/preview_container"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="match_parent"
+        android:background="?attr/colorSurfaceContainer"
+        android:clickable="true"
+        android:elevation="16dp"
+        android:focusable="true"
         android:orientation="vertical"
-        android:visibility="gone">
+        app:behavior_hideable="true"
+        app:behavior_peekHeight="80dp"
+        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior">
 
-        <com.google.android.material.divider.MaterialDivider
+        <com.google.android.material.bottomsheet.BottomSheetDragHandleView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:dividerColor="?attr/colorSurfaceContainerHighest" />
+            android:layout_height="wrap_content" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="?attr/colorSurfaceContainer"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp">
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="12dp">
 
             <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Layout Preview"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/preview_status"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Layout Preview"
-                android:textSize="12sp"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textStyle="bold" />
+                android:text="\u25cf Real-time"
+                android:textColor="?attr/colorPrimary"
+                android:textSize="11sp" />
+
         </LinearLayout>
 
         <com.google.android.material.divider.MaterialDivider
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:dividerColor="?attr/colorSurfaceContainerHighest" />
+            app:dividerColor="?attr/colorOutlineVariant" />
 
         <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="?attr/colorSurface">
 
             <FrameLayout
                 android:id="@+id/preview_pane_container"
@@ -81,12 +103,15 @@
                 android:id="@+id/preview_error"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
+                android:fontFamily="monospace"
                 android:gravity="center"
                 android:padding="16dp"
                 android:textColor="?attr/colorError"
                 android:textSize="13sp"
                 android:visibility="gone" />
+
         </FrameLayout>
+
     </LinearLayout>
 
-</LinearLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
