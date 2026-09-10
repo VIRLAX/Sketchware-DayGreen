@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -15,13 +16,16 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.content.res.AppCompatResources;
 
 import com.besome.sketch.beans.ViewBean;
 import com.besome.sketch.editor.view.ViewPane;
 import com.besome.sketch.lib.base.BaseAppCompatActivity;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.w3c.dom.Document;
@@ -99,6 +103,8 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     // Real-time preview fields
     private Handler previewHandler;
     private boolean isPreviewVisible = false;
+    private boolean isKeyboardVisible = false;
+    private BottomSheetBehavior<LinearLayout> bottomSheetBehavior;
     private final Runnable previewRunnable = this::updatePreview;
 
     public static void loadCESettings(Context c, CodeEditor ed, String prefix) {
@@ -419,6 +425,11 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
         loadCESettings(this, binding.editor, "act", true);
         loadToolbar();
 
+        // Initialize bottom sheet as hidden for all file types
+        BottomSheetBehavior<LinearLayout> initialBehavior = BottomSheetBehavior.from(binding.previewContainer);
+        initialBehavior.setHideable(true);
+        initialBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+
         // Setup real-time preview for layout XML files
         if (isFileInLayoutFolder() && scId != null) {
             setupRealtimePreview();
@@ -468,6 +479,12 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        // Close preview first if visible
+        if (bottomSheetBehavior != null && bottomSheetBehavior.getState() != BottomSheetBehavior.STATE_HIDDEN) {
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+            return;
+        }
+
         if (beforeContent.equals(binding.editor.getText().toString())) {
             super.onBackPressed();
         } else {
@@ -634,29 +651,86 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
         startActivity(intent);
     }
 
-    // ==================== Real-time Preview ====================
+    // ==================== Real-time Preview (BottomSheet) ====================
 
     private void setupRealtimePreview() {
         previewHandler = new Handler(Looper.getMainLooper());
+
+        // Configure BottomSheet behavior
+        bottomSheetBehavior = BottomSheetBehavior.from(binding.previewContainer);
+        bottomSheetBehavior.setHideable(true);
+        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+        bottomSheetBehavior.setFitToContents(false);
+        bottomSheetBehavior.setHalfExpandedRatio(0.45f);
+
+        bottomSheetBehavior.addBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
+            @Override
+            public void onStateChanged(@NonNull View bottomSheet, int newState) {
+                if (newState == BottomSheetBehavior.STATE_HIDDEN) {
+                    isPreviewVisible = false;
+                    binding.previewPaneContainer.removeAllViews();
+                    if (previewHandler != null) {
+                        previewHandler.removeCallbacks(previewRunnable);
+                    }
+                } else if (!isPreviewVisible &&
+                        (newState == BottomSheetBehavior.STATE_COLLAPSED ||
+                         newState == BottomSheetBehavior.STATE_HALF_EXPANDED ||
+                         newState == BottomSheetBehavior.STATE_EXPANDED)) {
+                    isPreviewVisible = true;
+                    updatePreview();
+                }
+            }
+
+            @Override
+            public void onSlide(@NonNull View bottomSheet, float slideOffset) {
+                // Smooth sliding handled by BottomSheetBehavior
+            }
+        });
+
+        // Detect keyboard to auto-collapse preview
+        View rootView = getWindow().getDecorView();
+        rootView.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            Rect r = new Rect();
+            rootView.getWindowVisibleDisplayFrame(r);
+            int screenHeight = rootView.getHeight();
+            int keypadHeight = screenHeight - r.bottom;
+            boolean keyboardNowVisible = keypadHeight > screenHeight * 0.15;
+
+            if (keyboardNowVisible && !isKeyboardVisible) {
+                isKeyboardVisible = true;
+                if (isPreviewVisible && bottomSheetBehavior != null) {
+                    int state = bottomSheetBehavior.getState();
+                    if (state == BottomSheetBehavior.STATE_EXPANDED ||
+                        state == BottomSheetBehavior.STATE_HALF_EXPANDED) {
+                        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+                    }
+                }
+            } else if (!keyboardNowVisible && isKeyboardVisible) {
+                isKeyboardVisible = false;
+            }
+        });
+
+        // Real-time content change listener (400ms debounce)
         binding.editor.subscribeEvent(ContentChangeEvent.class, (event, unsubscribe) -> {
             if (isPreviewVisible) {
                 previewHandler.removeCallbacks(previewRunnable);
-                previewHandler.postDelayed(previewRunnable, 500);
+                previewHandler.postDelayed(previewRunnable, 400);
             }
         });
     }
 
     private void togglePreview() {
-        isPreviewVisible = !isPreviewVisible;
-        if (isPreviewVisible) {
-            binding.previewContainer.setVisibility(View.VISIBLE);
-            updatePreview();
+        if (bottomSheetBehavior == null) {
+            // Fallback: open as separate activity
+            toLayoutPreview();
+            return;
+        }
+
+        int state = bottomSheetBehavior.getState();
+        if (state == BottomSheetBehavior.STATE_HIDDEN) {
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HALF_EXPANDED);
         } else {
-            binding.previewContainer.setVisibility(View.GONE);
-            binding.previewPaneContainer.removeAllViews();
-            if (previewHandler != null) {
-                previewHandler.removeCallbacks(previewRunnable);
-            }
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
         }
     }
 
