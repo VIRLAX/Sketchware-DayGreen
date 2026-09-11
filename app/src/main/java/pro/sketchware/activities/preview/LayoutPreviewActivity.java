@@ -1,6 +1,9 @@
 package pro.sketchware.activities.preview;
 
+import android.graphics.Color;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.Toast;
 
 import com.besome.sketch.beans.ViewBean;
 import com.besome.sketch.editor.view.ItemView;
@@ -17,9 +20,7 @@ import pro.sketchware.utility.SketchwareUtil;
 import pro.sketchware.utility.UI;
 
 public class LayoutPreviewActivity extends BaseAppCompatActivity {
-
     private ViewPane pane;
-
     private String content;
 
     @Override
@@ -33,34 +34,28 @@ public class LayoutPreviewActivity extends BaseAppCompatActivity {
         getSupportActionBar().setTitle("Layout Preview");
         getSupportActionBar().setSubtitle(getIntent().getStringExtra("title"));
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-        getSupportActionBar().setDisplayShowTitleEnabled(true);
-        toolbar.setNavigationOnClickListener(v -> {
-            if (!mB.a()) {
-                onBackPressed();
-            }
-        });
+        toolbar.setNavigationOnClickListener(v -> { if (!mB.a()) onBackPressed(); });
         content = getIntent().getStringExtra("xml");
-        var sc_id = getIntent().getStringExtra("sc_id");
+        var scId = getIntent().getStringExtra("sc_id");
         pane = binding.pane;
-        pane.initialize(sc_id, true);
-        pane.updateRootLayout(sc_id, getIntent().getStringExtra("title"));
+        pane.initialize(scId, true);
+        pane.updateRootLayout(scId, getIntent().getStringExtra("title"));
         pane.setVerticalScrollBarEnabled(true);
-        pane.setResourceManager(jC.d(sc_id));
+        pane.setResourceManager(jC.d(scId));
         UI.addSystemWindowInsetToPadding(binding.pane, false, false, false, true);
     }
 
     @Override
     public void onPostCreate(Bundle savedInstanceState) {
         super.onPostCreate(savedInstanceState);
-        if (content != null) {
-            try {
-                var parser = new ViewBeanParser(content);
-                loadViews(parser.parse());
-            } catch (Exception e) {
-                SketchwareUtil.toastError(e.toString());
-            }
-        } else {
-            SketchwareUtil.toastError("content is null");
+        if (content == null || content.trim().isEmpty()) {
+            showPreviewError("XML is empty.");
+            return;
+        }
+        try {
+            loadViews(new ViewBeanParser(content).parse());
+        } catch (Exception e) {
+            showPreviewError(cleanError(e));
         }
     }
 
@@ -69,24 +64,39 @@ public class LayoutPreviewActivity extends BaseAppCompatActivity {
         pane.addViewAndUpdateIndex(itemView);
         if (itemView instanceof ItemView sy) {
             sy.setFixed(true);
+            sy.setOnClickListener(v -> {
+                v.setBackgroundColor(Color.argb(70, 0, 150, 136));
+                Toast.makeText(this, "Component selected. Open XML editor to inspect its attributes.", Toast.LENGTH_SHORT).show();
+            });
             return sy;
         }
         return null;
     }
 
     private ItemView loadViews(ArrayList<ViewBean> views) {
-        ItemView itemView = null;
-        for (ViewBean view : views) {
-            if (views.indexOf(view) == 0) {
+        ItemView root = null;
+        for (int i = 0; i < views.size(); i++) {
+            ViewBean view = views.get(i);
+            if (i == 0) {
                 view.parent = "root";
                 view.parentType = 0;
                 view.preParent = null;
                 view.preParentType = -1;
-                itemView = loadView(view);
+                root = loadView(view);
             } else {
                 loadView(view);
             }
         }
-        return itemView;
+        return root;
+    }
+
+    private void showPreviewError(String message) {
+        SketchwareUtil.toastError(message);
+    }
+
+    private String cleanError(Exception e) {
+        String message = e.getMessage();
+        if (message == null || message.isBlank()) return "Invalid XML layout.";
+        return message.replace("java.io.StringReader@", "XML error near ");
     }
 }
