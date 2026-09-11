@@ -64,10 +64,6 @@ public class LayoutPreviewActivity extends BaseAppCompatActivity {
         pane.addViewAndUpdateIndex(itemView);
         if (itemView instanceof ItemView sy) {
             sy.setFixed(true);
-            sy.setOnClickListener(v -> {
-                v.setBackgroundColor(Color.argb(70, 0, 150, 136));
-                Toast.makeText(this, "Component selected. Open XML editor to inspect its attributes.", Toast.LENGTH_SHORT).show();
-            });
             return sy;
         }
         return null;

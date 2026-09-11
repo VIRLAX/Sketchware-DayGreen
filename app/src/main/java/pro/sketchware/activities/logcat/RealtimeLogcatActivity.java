@@ -30,12 +30,6 @@ import pro.sketchware.utility.UI;
 /**
  * Real-time Logcat Viewer with live streaming, level filtering,
  * crash detection, search highlighting, pause/resume, and export.
- *
- * Launch with optional intent extras:
- *   - "package_name" (String): filter logs by package
- *
- * Register in AndroidManifest.xml:
- *   <activity android:name=".activities.logcat.RealtimeLogcatActivity" />
  */
 public class RealtimeLogcatActivity extends BaseAppCompatActivity implements LogcatStreamReader.Callback {
 
@@ -255,7 +249,7 @@ public class RealtimeLogcatActivity extends BaseAppCompatActivity implements Log
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         if (reader != null) reader.stop();
         super.onDestroy();
     }
