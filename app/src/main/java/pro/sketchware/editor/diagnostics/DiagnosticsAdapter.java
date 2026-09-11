@@ -14,17 +14,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import pro.sketchware.R;
 import pro.sketchware.utility.RealtimeDiagnostics.Issue;
 
-/**
- * Adapter for the diagnostics panel RecyclerView.
- * Shows each issue with severity icon, line number, message, and hint.
- * Tap an issue to jump to the error line in the editor.
- */
+/** Adapter for the live diagnostics list. */
 public class DiagnosticsAdapter extends ListAdapter<Issue, DiagnosticsAdapter.ViewHolder> {
-
-    public interface OnIssueClickListener {
-        void onIssueClick(Issue issue);
-    }
-
+    public interface OnIssueClickListener { void onIssueClick(Issue issue); }
     private final OnIssueClickListener clickListener;
 
     public DiagnosticsAdapter(@NonNull OnIssueClickListener clickListener) {
@@ -33,36 +25,29 @@ public class DiagnosticsAdapter extends ListAdapter<Issue, DiagnosticsAdapter.Vi
     }
 
     private static final DiffUtil.ItemCallback<Issue> DIFF_CALLBACK = new DiffUtil.ItemCallback<>() {
-        @Override
-        public boolean areItemsTheSame(@NonNull Issue a, @NonNull Issue b) {
+        @Override public boolean areItemsTheSame(@NonNull Issue a, @NonNull Issue b) {
             return a.line() == b.line() && a.message().equals(b.message());
         }
-
-        @Override
-        public boolean areContentsTheSame(@NonNull Issue a, @NonNull Issue b) {
+        @Override public boolean areContentsTheSame(@NonNull Issue a, @NonNull Issue b) {
             return a.equals(b);
         }
     };
 
     @NonNull
-    @Override
-    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.item_diagnostic_entry, parent, false);
-        return new ViewHolder(view);
+    @Override public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        return new ViewHolder(LayoutInflater.from(parent.getContext())
+                .inflate(R.layout.item_diagnostic_entry, parent, false));
     }
 
-    @Override
-    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        Issue issue = getItem(position);
-        holder.bind(issue, clickListener);
+    @Override public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        holder.bind(getItem(position), clickListener);
     }
 
-    static class ViewHolder extends RecyclerView.ViewHolder {
-        final ImageView severityIcon;
-        final TextView lineNumber;
-        final TextView message;
-        final TextView hint;
+    static final class ViewHolder extends RecyclerView.ViewHolder {
+        private final ImageView severityIcon;
+        private final TextView lineNumber;
+        private final TextView message;
+        private final TextView hint;
 
         ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -73,31 +58,18 @@ public class DiagnosticsAdapter extends ListAdapter<Issue, DiagnosticsAdapter.Vi
         }
 
         void bind(Issue issue, OnIssueClickListener listener) {
-            switch (issue.severity()) {
-                case "error":
-                    severityIcon.setColorFilter(0xFFE53935);
-                    severityIcon.setImageResource(R.drawable.ic_mtrl_error);
-                    break;
-                case "warning":
-                    severityIcon.setColorFilter(0xFFFFA726);
-                    severityIcon.setImageResource(R.drawable.ic_warning_96dp);
-                    break;
-                default:
-                    severityIcon.setColorFilter(0xFF42A5F5);
-                    severityIcon.setImageResource(R.drawable.ic_mtrl_info);
-                    break;
-            }
-
+            int icon = "error".equals(issue.severity()) ? R.drawable.ic_mtrl_warning : R.drawable.ic_mtrl_info;
+            int color = "error".equals(issue.severity()) ? 0xFFE53935 : 0xFFFFA726;
+            severityIcon.setImageResource(icon);
+            severityIcon.setColorFilter(color);
             lineNumber.setText("Line " + issue.line());
             message.setText(issue.message());
-
-            if (issue.hint() != null && !issue.hint().isEmpty()) {
+            if (issue.hint() == null || issue.hint().isEmpty()) {
+                hint.setVisibility(View.GONE);
+            } else {
                 hint.setVisibility(View.VISIBLE);
                 hint.setText(issue.hint());
-            } else {
-                hint.setVisibility(View.GONE);
             }
-
             itemView.setOnClickListener(v -> listener.onIssueClick(issue));
         }
     }
