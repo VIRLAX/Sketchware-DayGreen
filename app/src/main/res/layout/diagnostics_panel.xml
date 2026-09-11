@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/colorSurfaceContainer"
+    android:orientation="vertical"
+    android:padding="12dp">
+    <TextView
+        android:id="@+id/diagnostics_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Diagnostics"
+        android:textAppearance="?attr/textAppearanceTitleMedium" />
+    <TextView
+        android:id="@+id/diagnostics_summary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="No issues detected"
+        android:textAppearance="?attr/textAppearanceBodyMedium" />
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/diagnostics_list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:nestedScrollingEnabled="false" />
+</LinearLayout>
