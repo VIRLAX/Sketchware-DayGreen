@@ -17,10 +17,10 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.content.res.AppCompatResources;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.besome.sketch.beans.ViewBean;
 import com.besome.sketch.editor.view.ViewPane;
@@ -74,9 +74,11 @@ import mod.jbk.code.CodeEditorLanguages;
 import pro.sketchware.R;
 import pro.sketchware.activities.preview.LayoutPreviewActivity;
 import pro.sketchware.databinding.CodeEditorHsBinding;
+import pro.sketchware.editor.diagnostics.LiveDiagnosticsManager;
 import pro.sketchware.tools.ViewBeanParser;
 import pro.sketchware.utility.EditorUtils;
 import pro.sketchware.utility.FileUtil;
+import pro.sketchware.utility.RealtimeDiagnostics;
 import pro.sketchware.utility.SketchwareUtil;
 import pro.sketchware.utility.ThemeUtils;
 import pro.sketchware.utility.UI;
@@ -99,34 +101,28 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     private boolean fromAndroidManifest;
     private String scId;
     private String activityName;
+    private LiveDiagnosticsManager liveDiagnostics;
 
-    // Real-time preview fields
     private Handler previewHandler;
     private boolean isPreviewVisible = false;
     private boolean isKeyboardVisible = false;
     private BottomSheetBehavior<LinearLayout> bottomSheetBehavior;
     private final Runnable previewRunnable = this::updatePreview;
 
-    public static void loadCESettings(Context c, CodeEditor ed, String prefix) {
-        loadCESettings(c, ed, prefix, false);
-    }
-
+    public static void loadCESettings(Context c, CodeEditor ed, String prefix) { loadCESettings(c, ed, prefix, false); }
     public static void loadCESettings(Context c, CodeEditor ed, String prefix, boolean loadTheme) {
         pref = c.getSharedPreferences("hsce", Activity.MODE_PRIVATE);
-
         int text_size = pref.getInt(prefix + "_ts", 12);
         int theme = pref.getInt(prefix + "_theme", 3);
         boolean word_wrap = pref.getBoolean(prefix + "_ww", false);
         boolean auto_c = pref.getBoolean(prefix + "_ac", true);
         boolean auto_complete_symbol_pairs = pref.getBoolean(prefix + "_acsp", true);
-
         if (loadTheme) selectTheme(ed, theme);
         ed.setTextSize(text_size);
         ed.setWordwrap(word_wrap);
         ed.getProps().symbolPairAutoCompletion = auto_complete_symbol_pairs;
         ed.getComponent(EditorAutoCompletion.class).setEnabled(auto_c);
     }
-
     public static void selectTheme(CodeEditor ed, int which) {
         boolean isDark = ThemeUtils.isDarkThemeEnabled(ed.getContext());
         String theme = isDark ? CodeEditorColorSchemes.THEME_GITHUB_DARK : CodeEditorColorSchemes.THEME_GITHUB_LIGHT;
@@ -134,653 +130,124 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
         EditorUtils.getMaterialStyledScheme(ed, true);
         ed.rerunAnalysis();
     }
-
     public static void selectLanguage(CodeEditor ed, int which) {
         switch (which) {
             default:
-            case 0:
-                ed.setEditorLanguage(new JavaLanguage());
-                languageId = 0;
-                break;
-
-            case 1:
-                ed.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN));
-                languageId = 1;
-                break;
-
-            case 2:
-                ed.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_XML));
-                languageId = 2;
-                break;
+            case 0: ed.setEditorLanguage(new JavaLanguage()); languageId = 0; break;
+            case 1: ed.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN)); languageId = 1; break;
+            case 2: ed.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_XML)); languageId = 2; break;
         }
-
     }
 
     public static String prettifyXml(String xml, int indentAmount, Intent extras) {
         if (xml == null || xml.trim().isEmpty()) return xml;
-
         try {
             boolean omitXmlDecl = extras != null && extras.hasExtra("disableHeader");
             String indentUnit = " ".repeat(Math.max(1, indentAmount));
-
             StringBuilder formatted = new StringBuilder();
             int depth = 0;
-
             boolean justOpenedTag = false;
-
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("<[^>]+>", java.util.regex.Pattern.DOTALL)
-                    .matcher(xml);
-
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("<[^>]+>", java.util.regex.Pattern.DOTALL).matcher(xml);
             int lastEnd = 0;
             while (m.find()) {
                 String between = xml.substring(lastEnd, m.start()).trim();
-                String rawTag = m.group();
-                lastEnd = m.end();
-
-                String tag = rawTag.replaceAll("\\s+", " ")
-                        .replace("< ", "<")
-                        .replace(" >", ">")
-                        .replace(" />", " />")
-                        .trim();
-
+                String rawTag = m.group(); lastEnd = m.end();
+                String tag = rawTag.replaceAll("\\s+", " ").replace("< ", "<").replace(" >", ">").replace(" />", " />").trim();
                 boolean isDeclaration = tag.startsWith("<?");
                 boolean isComment = tag.startsWith("<!--");
                 boolean isClosing = tag.startsWith("</");
                 boolean isSelfClosing = !isDeclaration && tag.endsWith("/>");
-
                 if (isClosing) depth = Math.max(0, depth - 1);
-
                 if (!between.isEmpty()) {
-                    if (justOpenedTag) {
-                        if (!between.contains("\n")) {
-                            formatted.append(between);
-                        } else {
-                            formatted.append("\n").append(indentUnit.repeat(depth + 1)).append(between).append("\n");
-                        }
-                    } else {
-                        formatted.append(indentUnit.repeat(depth)).append(between).append("\n");
-                    }
+                    if (justOpenedTag) { if (!between.contains("\n")) formatted.append(between); else formatted.append("\n").append(indentUnit.repeat(depth + 1)).append(between).append("\n"); }
+                    else formatted.append(indentUnit.repeat(depth)).append(between).append("\n");
                 }
-
-                if (isDeclaration) {
-                    if (!omitXmlDecl) {
-                        formatted.append(tag).append("\n");
-                    }
-                    justOpenedTag = false;
-                } else if (isComment) {
-                    formatted.append(indentUnit.repeat(depth)).append(tag).append("\n");
-                    justOpenedTag = false;
-                } else if (isClosing) {
-                    if (justOpenedTag && !between.contains("\n")) {
-                        formatted.append(tag).append("\n");
-                    } else {
-                        formatted.append(indentUnit.repeat(depth)).append(tag).append("\n");
-                    }
-                    justOpenedTag = false;
-                } else {
-                    if (justOpenedTag) {
-                        formatted.append("\n");
-                    }
-                    appendTagWithWrapping(formatted, tag, isSelfClosing, depth, indentUnit, indentAmount);
-
-                    if (isSelfClosing) {
-                        justOpenedTag = false;
-                    } else {
-                        justOpenedTag = true;
-                        depth++;
-                    }
-                }
+                if (isDeclaration) { if (!omitXmlDecl) formatted.append(tag).append("\n"); justOpenedTag = false; }
+                else if (isComment) { formatted.append(indentUnit.repeat(depth)).append(tag).append("\n"); justOpenedTag = false; }
+                else if (isClosing) { if (justOpenedTag && !between.contains("\n")) formatted.append(tag).append("\n"); else formatted.append(indentUnit.repeat(depth)).append(tag).append("\n"); justOpenedTag = false; }
+                else { if (justOpenedTag) formatted.append("\n"); appendTagWithWrapping(formatted, tag, isSelfClosing, depth, indentUnit, indentAmount); if (isSelfClosing) justOpenedTag = false; else { justOpenedTag = true; depth++; } }
             }
-
             return formatted.toString().trim();
-
-        } catch (Exception e) {
-            return null;
-        }
+        } catch (Exception e) { return null; }
     }
-
     private static final int PRETTIFY_MAX_LINE_LENGTH = 100;
-
-    private static final java.util.Set<String> ALWAYS_WRAP_TAGS = java.util.Set.of(
-            "manifest",
-            "uses-library",
-            "meta-data",
-            "activity",
-            "activity-alias",
-            "service",
-            "receiver",
-            "provider",
-            "intent-filter"
-    );
-
-    private static final java.util.Map<String, Integer> CUSTOM_LINE_LENGTH = java.util.Map.of(
-            "uses-permission", 150
-    );
-
-    private static void appendTagWithWrapping(StringBuilder formatted, String tag,
-                                                boolean isSelfClosing, int depth,
-                                                String indentUnit, int indentAmount) {
-        String inner = isSelfClosing
-                ? tag.substring(1, tag.length() - 2).trim()
-                : tag.substring(1, tag.length() - 1).trim();
-
+    private static final java.util.Set<String> ALWAYS_WRAP_TAGS = java.util.Set.of("manifest", "uses-library", "meta-data", "activity", "activity-alias", "service", "receiver", "provider", "intent-filter");
+    private static final java.util.Map<String, Integer> CUSTOM_LINE_LENGTH = java.util.Map.of("uses-permission", 150);
+    private static void appendTagWithWrapping(StringBuilder formatted, String tag, boolean isSelfClosing, int depth, String indentUnit, int indentAmount) {
+        String inner = isSelfClosing ? tag.substring(1, tag.length() - 2).trim() : tag.substring(1, tag.length() - 1).trim();
         int firstSpace = inner.indexOf(' ');
         String tagName = firstSpace == -1 ? inner : inner.substring(0, firstSpace);
         String attrPart = firstSpace == -1 ? "" : inner.substring(firstSpace + 1).trim();
-
         java.util.List<String> attrs = new java.util.ArrayList<>();
-        if (!attrPart.isEmpty()) {
-            java.util.regex.Matcher am = java.util.regex.Pattern
-                    .compile("[^\\s=]+=\"[^\"]*\"")
-                    .matcher(attrPart);
-            while (am.find()) attrs.add(am.group());
-        }
-
-        String xmlnsAttr = null;
-        java.util.List<String> otherAttrs = new java.util.ArrayList<>();
-        for (String a : attrs) {
-            if (a.startsWith("xmlns:") && xmlnsAttr == null) {
-                xmlnsAttr = a;
-            } else {
-                otherAttrs.add(a);
-            }
-        }
-
+        if (!attrPart.isEmpty()) { java.util.regex.Matcher am = java.util.regex.Pattern.compile("[^\\s=]+=\"[^\"]*\"").matcher(attrPart); while (am.find()) attrs.add(am.group()); }
+        String xmlnsAttr = null; java.util.List<String> otherAttrs = new java.util.ArrayList<>();
+        for (String a : attrs) { if (a.startsWith("xmlns:") && xmlnsAttr == null) xmlnsAttr = a; else otherAttrs.add(a); }
         int singleLineLength = indentAmount * depth + tag.length();
         int maxLineLength = CUSTOM_LINE_LENGTH.getOrDefault(tagName, PRETTIFY_MAX_LINE_LENGTH);
         boolean forceWrap = attrs.size() >= 2 && ALWAYS_WRAP_TAGS.contains(tagName);
-
         formatted.append(indentUnit.repeat(depth));
-
-        if (!forceWrap && (attrs.size() <= 1 || singleLineLength <= maxLineLength)) {
-            formatted.append(tag);
-            if (isSelfClosing) formatted.append("\n");
-            return;
-        }
-
-        formatted.append("<").append(tagName);
-        if (xmlnsAttr != null) formatted.append(" ").append(xmlnsAttr);
-        formatted.append("\n");
-
-        for (int i = 0; i < otherAttrs.size(); i++) {
-            formatted.append(indentUnit.repeat(depth + 1)).append(otherAttrs.get(i));
-            if (i == otherAttrs.size() - 1) {
-                formatted.append(isSelfClosing ? " />\n" : ">");
-            } else {
-                formatted.append("\n");
-            }
-        }
+        if (!forceWrap && (attrs.size() <= 1 || singleLineLength <= maxLineLength)) { formatted.append(tag); if (isSelfClosing) formatted.append("\n"); return; }
+        formatted.append("<").append(tagName); if (xmlnsAttr != null) formatted.append(" ").append(xmlnsAttr); formatted.append("\n");
+        for (int i = 0; i < otherAttrs.size(); i++) { formatted.append(indentUnit.repeat(depth + 1)).append(otherAttrs.get(i)); if (i == otherAttrs.size() - 1) formatted.append(isSelfClosing ? " />\n" : ">"); else formatted.append("\n"); }
     }
-
-    /**
-     * Adds a specified amount of tabs.
-     */
-    public static void a(StringBuilder code, int tabAmount) {
-        for (int i = 0; i < tabAmount; ++i) {
-            code.append('\t');
-        }
-    }
-
+    public static void a(StringBuilder code, int tabAmount) { for (int i = 0; i < tabAmount; ++i) code.append('\t'); }
     public static void showSwitchThemeDialog(Activity activity, CodeEditor codeEditor, DialogInterface.OnClickListener listener) {
         String[] themeItems;
         int selectedThemeIndex = -1;
-
-        if (codeEditor.getColorScheme() instanceof TextMateColorScheme) {
-            themeItems = new String[]{"Default (Dynamic)", "Dracula", "GitHub Light", "GitHub Dark", "Eclipse", "VS2019", "NotepadXX"};
-        } else {
-            EditorColorScheme currentScheme = codeEditor.getColorScheme();
-            var knownColorSchemesProperlyOrdered = new ArrayList<>(KNOWN_COLOR_SCHEMES);
-            Collections.reverse(knownColorSchemesProperlyOrdered);
-            selectedThemeIndex = knownColorSchemesProperlyOrdered.stream()
-                    .filter(pair -> pair.second.equals(currentScheme.getClass()))
-                    .map(KNOWN_COLOR_SCHEMES::indexOf)
-                    .findFirst()
-                    .orElse(-1);
-
-            List<String> items = new ArrayList<>();
-            items.add("Default (Dynamic)");
-            items.addAll(KNOWN_COLOR_SCHEMES.stream().map(pair -> pair.first).toList());
-            themeItems = items.toArray(new String[0]);
-
-            if (selectedThemeIndex != -1) selectedThemeIndex++;
-        }
-
-        new MaterialAlertDialogBuilder(activity)
-                .setTitle("Select Theme")
-                .setSingleChoiceItems(themeItems, selectedThemeIndex, listener)
-                .setNegativeButton(R.string.common_word_cancel, null)
-                .show();
+        if (codeEditor.getColorScheme() instanceof TextMateColorScheme) themeItems = new String[]{"Default (Dynamic)", "Dracula", "GitHub Light", "GitHub Dark", "Eclipse", "VS2019", "NotepadXX"};
+        else { EditorColorScheme currentScheme = codeEditor.getColorScheme(); var known = new ArrayList<>(KNOWN_COLOR_SCHEMES); Collections.reverse(known); selectedThemeIndex = known.stream().filter(pair -> pair.second.equals(currentScheme.getClass())).map(KNOWN_COLOR_SCHEMES::indexOf).findFirst().orElse(-1); List<String> items = new ArrayList<>(); items.add("Default (Dynamic)"); items.addAll(KNOWN_COLOR_SCHEMES.stream().map(pair -> pair.first).toList()); themeItems = items.toArray(new String[0]); if (selectedThemeIndex != -1) selectedThemeIndex++; }
+        new MaterialAlertDialogBuilder(activity).setTitle("Select Theme").setSingleChoiceItems(themeItems, selectedThemeIndex, listener).setNegativeButton(R.string.common_word_cancel, null).show();
     }
+    public static void showSwitchLanguageDialog(Activity activity, CodeEditor codeEditor, DialogInterface.OnClickListener listener) { CharSequence[] languagesList = {"Java", "Kotlin", "XML"}; new MaterialAlertDialogBuilder(activity).setTitle("Select Language").setSingleChoiceItems(languagesList, languageId, listener).setNegativeButton(R.string.common_word_cancel, null).show(); }
 
-    public static void showSwitchLanguageDialog(Activity activity, CodeEditor codeEditor, DialogInterface.OnClickListener listener) {
-        CharSequence[] languagesList = {
-                "Java",
-                "Kotlin",
-                "XML"
-        };
-
-        new MaterialAlertDialogBuilder(activity)
-                .setTitle("Select Language")
-                .setSingleChoiceItems(languagesList, languageId, listener)
-                .setNegativeButton(R.string.common_word_cancel, null)
-                .show();
-    }
-
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        enableEdgeToEdgeNoContrast();
-        super.onCreate(savedInstanceState);
-
-        binding = CodeEditorHsBinding.inflate(getLayoutInflater());
-        setContentView(binding.getRoot());
-
+    @Override public void onCreate(Bundle savedInstanceState) {
+        enableEdgeToEdgeNoContrast(); super.onCreate(savedInstanceState);
+        binding = CodeEditorHsBinding.inflate(getLayoutInflater()); setContentView(binding.getRoot());
         fromAndroidManifest = getIntent().getBooleanExtra(FLAG_FROM_ANDROID_MANIFEST, false);
-        String title = getIntent().getStringExtra("title");
-        scId = getIntent().getStringExtra("sc_id");
-        activityName = getIntent().getStringExtra("activity_name");
-
-        binding.editor.setScId(scId);
-        binding.editor.setTypefaceText(EditorUtils.getTypeface(this));
-        binding.editor.setTextSize(16);
-
-        if (fromAndroidManifest) {
-            String filePath = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + scId + "/Injection/androidmanifest/activities_components.json";
-            if (FileUtil.isExistFile(filePath)) {
-                ArrayList<HashMap<String, Object>> arrayList = getGson()
-                        .fromJson(FileUtil.readFile(filePath), Helper.TYPE_MAP_LIST);
-                for (int i = 0; i < arrayList.size(); i++) {
-                    if (arrayList.get(i).get("name").equals(activityName)) {
-                        beforeContent = (String) arrayList.get(i).get("value");
-                    }
-                }
-            }
-        }
-
-        if (!fromAndroidManifest)
-            beforeContent = FileUtil.readFile(getIntent().getStringExtra("content"));
+        String title = getIntent().getStringExtra("title"); scId = getIntent().getStringExtra("sc_id"); activityName = getIntent().getStringExtra("activity_name");
+        binding.editor.setScId(scId); binding.editor.setTypefaceText(EditorUtils.getTypeface(this)); binding.editor.setTextSize(16);
+        if (fromAndroidManifest) { String filePath = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + scId + "/Injection/androidmanifest/activities_components.json"; if (FileUtil.isExistFile(filePath)) { ArrayList<HashMap<String, Object>> list = getGson().fromJson(FileUtil.readFile(filePath), Helper.TYPE_MAP_LIST); for (HashMap<String, Object> item : list) if (item.get("name").equals(activityName)) beforeContent = (String) item.get("value"); } }
+        if (!fromAndroidManifest) beforeContent = FileUtil.readFile(getIntent().getStringExtra("content"));
         binding.editor.setText(beforeContent);
+        if (fromAndroidManifest) { EditorUtils.loadXmlConfig(binding.editor, "AndroidManifest.xml"); languageId = 2; }
+        else if (title != null && title.endsWith(".java")) { EditorUtils.loadJavaConfig(binding.editor); languageId = 0; }
+        else if (title != null && title.endsWith(".kt")) { binding.editor.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN)); selectTheme(binding.editor, 0); languageId = 1; }
+        else if (title != null && title.endsWith(".xml")) { EditorUtils.loadXmlConfig(binding.editor, getIntent().getStringExtra("content")); languageId = 2; }
+        else if (title != null && title.endsWith(".html")) EditorUtils.loadHtmlConfig(binding.editor);
+        else if (title != null && title.endsWith(".js")) EditorUtils.loadJsConfig(binding.editor);
+        else if (title != null && title.endsWith(".css")) EditorUtils.loadCssConfig(binding.editor);
 
-        if (fromAndroidManifest) {
-            EditorUtils.loadXmlConfig(binding.editor, "AndroidManifest.xml");
-            languageId = 2;
-        } else if (title.endsWith(".java")) {
-            EditorUtils.loadJavaConfig(binding.editor);
-            languageId = 0;
-        } else if (title.endsWith(".kt")) {
-            binding.editor.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN));
-            selectTheme(binding.editor, 0);
-            languageId = 1;
-        } else if (title.endsWith(".xml")) {
-            EditorUtils.loadXmlConfig(binding.editor, getIntent().getStringExtra("content"));
-            languageId = 2;
-        } else if (title.endsWith(".html")) {
-            EditorUtils.loadHtmlConfig(binding.editor);
-        } else if (title.endsWith(".js")) {
-            EditorUtils.loadJsConfig(binding.editor);
-        } else if (title.endsWith(".css")) {
-            EditorUtils.loadCssConfig(binding.editor);
-        }
+        loadCESettings(this, binding.editor, "act", true); loadToolbar();
+        // The diagnostics manager is attached to the actual editor used by every source file.
+        // The RecyclerView is intentionally hidden: squiggles are rendered in the editor itself.
+        RecyclerView diagnosticsSink = new RecyclerView(this);
+        diagnosticsSink.setVisibility(View.GONE);
+        RealtimeDiagnostics.Kind kind = fromAndroidManifest || (title != null && title.endsWith(".xml")) ? RealtimeDiagnostics.Kind.XML : title != null && title.endsWith(".kt") ? RealtimeDiagnostics.Kind.KOTLIN : RealtimeDiagnostics.Kind.JAVA;
+        liveDiagnostics = new LiveDiagnosticsManager(binding.editor, diagnosticsSink, null, null);
+        liveDiagnostics.setLanguage(kind);
+        liveDiagnostics.attach();
 
-        loadCESettings(this, binding.editor, "act", true);
-        loadToolbar();
-
-        // Initialize bottom sheet as hidden for all file types
-        BottomSheetBehavior<LinearLayout> initialBehavior = BottomSheetBehavior.from(binding.previewContainer);
-        initialBehavior.setHideable(true);
-        initialBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
-
-        // Setup real-time preview for layout XML files
-        if (isFileInLayoutFolder() && scId != null) {
-            setupRealtimePreview();
-        }
-
-        UI.addSystemWindowInsetToPadding(binding.appBarLayout, true, true, true, false);
-        UI.addSystemWindowInsetToMargin(binding.editor, true, false, true, true);
+        BottomSheetBehavior<LinearLayout> initialBehavior = BottomSheetBehavior.from(binding.previewContainer); initialBehavior.setHideable(true); initialBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+        if (isFileInLayoutFolder() && scId != null) setupRealtimePreview();
+        UI.addSystemWindowInsetToPadding(binding.appBarLayout, true, true, true, false); UI.addSystemWindowInsetToMargin(binding.editor, true, false, true, true);
     }
 
     public void save() {
         beforeContent = binding.editor.getText().toString();
-
-        if (fromAndroidManifest) {
-            String filePath = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + scId + "/Injection/androidmanifest/activities_components.json";
-            if (FileUtil.isExistFile(filePath)) {
-                ArrayList<HashMap<String, Object>> activitiesComponents = getGson()
-                        .fromJson(FileUtil.readFile(filePath), Helper.TYPE_MAP_LIST);
-                for (int i = 0; i < activitiesComponents.size(); i++) {
-                    if (activitiesComponents.get(i).get("name").equals(activityName)) {
-                        activitiesComponents.get(i).put("value", beforeContent);
-                        FileUtil.writeFile(filePath, getGson().toJson(activitiesComponents));
-                        SketchwareUtil.toast("Saved");
-                        return;
-                    }
-                }
-                HashMap<String, Object> map = new HashMap<>();
-                map.put("name", activityName);
-                map.put("value", beforeContent);
-                activitiesComponents.add(map);
-                FileUtil.writeFile(filePath, getGson().toJson(activitiesComponents));
-            } else {
-                ArrayList<HashMap<String, Object>> arrayList = new ArrayList<>();
-                HashMap<String, Object> map = new HashMap<>();
-                map.put("name", activityName);
-                map.put("value", beforeContent);
-                arrayList.add(map);
-                FileUtil.writeFile(filePath, getGson().toJson(arrayList));
-            }
-        } else {
-            String contentPath = getIntent().getStringExtra("content");
-            FileUtil.writeFile(contentPath, beforeContent);
-            XmlSyncHelper.syncXml(this, scId, getIntent().getStringExtra("title"), beforeContent);
-        }
-
+        if (fromAndroidManifest) { String filePath = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + scId + "/Injection/androidmanifest/activities_components.json"; if (FileUtil.isExistFile(filePath)) { ArrayList<HashMap<String, Object>> list = getGson().fromJson(FileUtil.readFile(filePath), Helper.TYPE_MAP_LIST); for (int i = 0; i < list.size(); i++) if (list.get(i).get("name").equals(activityName)) { list.get(i).put("value", beforeContent); FileUtil.writeFile(filePath, getGson().toJson(list)); SketchwareUtil.toast("Saved"); return; } HashMap<String, Object> map = new HashMap<>(); map.put("name", activityName); map.put("value", beforeContent); list.add(map); FileUtil.writeFile(filePath, getGson().toJson(list)); } else { ArrayList<HashMap<String, Object>> list = new ArrayList<>(); HashMap<String, Object> map = new HashMap<>(); map.put("name", activityName); map.put("value", beforeContent); list.add(map); FileUtil.writeFile(filePath, getGson().toJson(list)); } }
+        else { String contentPath = getIntent().getStringExtra("content"); FileUtil.writeFile(contentPath, beforeContent); XmlSyncHelper.syncXml(this, scId, getIntent().getStringExtra("title"), beforeContent); }
         SketchwareUtil.toast("Saved");
     }
 
-    @Override
-    public void onBackPressed() {
-        // Close preview first if visible
-        if (bottomSheetBehavior != null && bottomSheetBehavior.getState() != BottomSheetBehavior.STATE_HIDDEN) {
-            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
-            return;
-        }
+    @Override public void onBackPressed() { if (bottomSheetBehavior != null && bottomSheetBehavior.getState() != BottomSheetBehavior.STATE_HIDDEN) { bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN); return; } if (beforeContent.equals(binding.editor.getText().toString())) super.onBackPressed(); else { MaterialAlertDialogBuilder dialog = new MaterialAlertDialogBuilder(this); dialog.setIcon(R.drawable.ic_warning_96dp); dialog.setTitle(Helper.getResString(R.string.common_word_warning)); dialog.setMessage(Helper.getResString(R.string.src_code_editor_unsaved_changes_dialog_warning_message)); dialog.setPositiveButton(Helper.getResString(R.string.common_word_exit), (v, which) -> { v.dismiss(); finish(); }); dialog.setNegativeButton(Helper.getResString(R.string.common_word_cancel), null); dialog.show(); } }
+    private void loadToolbar() { String title = getIntent().getStringExtra("title"); binding.toolbar.setTitle(title); SharedPreferences local_pref = getSharedPreferences("hsce", Activity.MODE_PRIVATE); Menu toolbarMenu = binding.toolbar.getMenu(); toolbarMenu.clear(); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Undo").setIcon(AppCompatResources.getDrawable(this, R.drawable.ic_mtrl_undo)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Redo").setIcon(AppCompatResources.getDrawable(this, R.drawable.ic_mtrl_redo)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Save").setIcon(AppCompatResources.getDrawable(this, R.drawable.ic_mtrl_save)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); if (isFileInLayoutFolder() && getIntent().hasExtra("sc_id")) toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Preview").setIcon(AppCompatResources.getDrawable(this, R.drawable.ic_mtrl_preview)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Find & Replace"); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Word wrap").setCheckable(true).setChecked(local_pref.getBoolean("act_ww", false)); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Pretty print"); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Select language"); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Auto complete").setCheckable(true).setChecked(local_pref.getBoolean("act_ac", true)); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Auto complete symbol pair").setCheckable(true).setChecked(local_pref.getBoolean("act_acsp", true)); binding.toolbar.setOnMenuItemClickListener(item -> { String title1 = item.getTitle().toString(); switch (title1) { case "Undo": binding.editor.undo(); break; case "Redo": binding.editor.redo(); break; case "Save": save(); break; case "Preview": togglePreview(); break; case "Select language": showSwitchLanguageDialog(this, binding.editor, (dialog, which) -> { selectLanguage(binding.editor, which); RealtimeDiagnostics.Kind selected = which == 2 ? RealtimeDiagnostics.Kind.XML : which == 1 ? RealtimeDiagnostics.Kind.KOTLIN : RealtimeDiagnostics.Kind.JAVA; if (liveDiagnostics != null) liveDiagnostics.setLanguage(selected); dialog.dismiss(); }); break; case "Find & Replace": item.setChecked(!item.isChecked()); binding.editor.setWordwrap(item.isChecked()); pref.edit().putBoolean("act_ww", item.isChecked()).apply(); break; case "Auto complete symbol pair": item.setChecked(!item.isChecked()); binding.editor.getProps().symbolPairAutoCompletion = item.isChecked(); pref.edit().putBoolean("act_acsp", item.isChecked()).apply(); break; case "Auto complete": item.setChecked(!item.isChecked()); binding.editor.getComponent(EditorAutoCompletion.class).setEnabled(item.isChecked()); pref.edit().putBoolean("act_ac", item.isChecked()).apply(); break; default: return false; } return true; }); }
+    @Override public void onStop() { super.onStop(); float scaledDensity = getResources().getDisplayMetrics().scaledDensity; pref.edit().putInt("act_ts", (int) (binding.editor.getTextSizePx() / scaledDensity)).apply(); }
+    @Override public void onDestroy() { if (liveDiagnostics != null) liveDiagnostics.detach(); if (previewHandler != null) previewHandler.removeCallbacks(previewRunnable); super.onDestroy(); }
 
-        if (beforeContent.equals(binding.editor.getText().toString())) {
-            super.onBackPressed();
-        } else {
-            MaterialAlertDialogBuilder dialog = new MaterialAlertDialogBuilder(this);
-            dialog.setIcon(R.drawable.ic_warning_96dp);
-            dialog.setTitle(Helper.getResString(R.string.common_word_warning));
-            dialog.setMessage(Helper.getResString(R.string.src_code_editor_unsaved_changes_dialog_warning_message));
-
-            dialog.setPositiveButton(Helper.getResString(R.string.common_word_exit), (v, which) -> {
-                v.dismiss();
-                finish();
-            });
-            dialog.setNegativeButton(Helper.getResString(R.string.common_word_cancel), null);
-            dialog.show();
-        }
-    }
-
-    private void loadToolbar() {
-        {
-            String title = getIntent().getStringExtra("title");
-            binding.toolbar.setTitle(title);
-            SharedPreferences local_pref = getSharedPreferences("hsce", Activity.MODE_PRIVATE);
-            Menu toolbarMenu = binding.toolbar.getMenu();
-            toolbarMenu.clear();
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Undo").setIcon(AppCompatResources.getDrawable(this, R.drawable.ic_mtrl_undo)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Redo").setIcon(AppCompatResources.getDrawable(this, R.drawable.ic_mtrl_redo)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Save").setIcon(AppCompatResources.getDrawable(this, R.drawable.ic_mtrl_save)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-            if (isFileInLayoutFolder() && getIntent().hasExtra("sc_id")) {
-                toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Preview")
-                    .setIcon(AppCompatResources.getDrawable(this, R.drawable.ic_mtrl_preview))
-                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-            }
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Find & Replace");
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Word wrap").setCheckable(true).setChecked(local_pref.getBoolean("act_ww", false));
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Pretty print");
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Select language");
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Auto complete").setCheckable(true).setChecked(local_pref.getBoolean("act_ac", true));
-            toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Auto complete symbol pair").setCheckable(true).setChecked(local_pref.getBoolean("act_acsp", true));
-
-            binding.toolbar.setOnMenuItemClickListener(item -> {
-                String title1 = item.getTitle().toString();
-                switch (title1) {
-                    case "Undo":
-                        binding.editor.undo();
-                        break;
-
-                    case "Redo":
-                        binding.editor.redo();
-                        break;
-
-                    case "Save":
-                        save();
-                        break;
-
-                    case "Pretty print":
-                        if (getIntent().hasExtra("java")) {
-                            StringBuilder b = new StringBuilder();
-
-                            for (String line : binding.editor.getText().toString().split("\n")) {
-                                String trims = (line + "X").trim();
-                                trims = trims.substring(0, trims.length() - 1);
-
-                                b.append(trims);
-                                b.append("\n");
-                            }
-
-                            boolean err = false;
-                            String ss = b.toString();
-
-                            try {
-                                ss = Lx.j(ss, true);
-                            } catch (Exception e) {
-                                err = true;
-                                SketchwareUtil.toastError("Your code contains incorrectly nested parentheses");
-                            }
-
-                            if (!err) binding.editor.setText(ss);
-
-                        } else if (getIntent().hasExtra("xml")) {
-                            String format = prettifyXml(binding.editor.getText().toString(), 4, getIntent());
-
-                            if (format != null) {
-                                binding.editor.setText(format);
-                            } else {
-                                SketchwareUtil.toastError("Failed to format XML file", Toast.LENGTH_LONG);
-                            }
-                        } else {
-                            SketchwareUtil.toast("Only Java and XML files can be formatted");
-                        }
-                        break;
-
-                    case "Select language":
-                        showSwitchLanguageDialog(this, binding.editor, (dialog, which) -> {
-                            selectLanguage(binding.editor, which);
-                            dialog.dismiss();
-                        });
-                        break;
-
-                    case "Find & Replace":
-                        item.setChecked(!item.isChecked());
-                        binding.editor.setWordwrap(item.isChecked());
-
-                        pref.edit().putBoolean("act_ww", item.isChecked()).apply();
-                        break;
-
-                    case "Auto complete symbol pair":
-                        item.setChecked(!item.isChecked());
-                        binding.editor.getProps().symbolPairAutoCompletion = item.isChecked();
-
-                        pref.edit().putBoolean("act_acsp", item.isChecked()).apply();
-                        break;
-
-                    case "Auto complete":
-                        item.setChecked(!item.isChecked());
-
-                        binding.editor.getComponent(EditorAutoCompletion.class).setEnabled(item.isChecked());
-                        pref.edit().putBoolean("act_ac", item.isChecked()).apply();
-                        break;
-
-                    case "Preview":
-                        togglePreview();
-                        break;
-
-                    default:
-                        return false;
-                }
-                return true;
-            });
-        }
-    }
-
-    @Override
-    public void onStop() {
-        super.onStop();
-
-        float scaledDensity = getResources().getDisplayMetrics().scaledDensity;
-        pref.edit().putInt("act_ts", (int) (binding.editor.getTextSizePx() / scaledDensity)).apply();
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (previewHandler != null) {
-            previewHandler.removeCallbacks(previewRunnable);
-        }
-        super.onDestroy();
-    }
-
-    private boolean isFileInLayoutFolder() {
-        String content = getIntent().getStringExtra("content");
-        if (content != null) {
-            File file = new File(content);
-            if (content.contains("/resource/layout/")) {
-                String layoutFolder = file.getParent();
-                return layoutFolder != null && layoutFolder.endsWith("/resource/layout");
-            }
-        }
-        return false;
-    }
-
-    private void toLayoutPreview() {
-        Intent intent = new Intent(getApplicationContext(), LayoutPreviewActivity.class);
-        intent.putExtras(getIntent());
-        intent.putExtra("xml", binding.editor.getText().toString());
-        startActivity(intent);
-    }
-
-    // ==================== Real-time Preview (BottomSheet) ====================
-
-    private void setupRealtimePreview() {
-        previewHandler = new Handler(Looper.getMainLooper());
-
-        // Configure BottomSheet behavior
-        bottomSheetBehavior = BottomSheetBehavior.from(binding.previewContainer);
-        bottomSheetBehavior.setHideable(true);
-        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
-        bottomSheetBehavior.setFitToContents(false);
-        bottomSheetBehavior.setHalfExpandedRatio(0.45f);
-
-        bottomSheetBehavior.addBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
-            @Override
-            public void onStateChanged(@NonNull View bottomSheet, int newState) {
-                if (newState == BottomSheetBehavior.STATE_HIDDEN) {
-                    isPreviewVisible = false;
-                    binding.previewPaneContainer.removeAllViews();
-                    if (previewHandler != null) {
-                        previewHandler.removeCallbacks(previewRunnable);
-                    }
-                } else if (!isPreviewVisible &&
-                        (newState == BottomSheetBehavior.STATE_COLLAPSED ||
-                         newState == BottomSheetBehavior.STATE_HALF_EXPANDED ||
-                         newState == BottomSheetBehavior.STATE_EXPANDED)) {
-                    isPreviewVisible = true;
-                    updatePreview();
-                }
-            }
-
-            @Override
-            public void onSlide(@NonNull View bottomSheet, float slideOffset) {
-                // Smooth sliding handled by BottomSheetBehavior
-            }
-        });
-
-        // Detect keyboard to auto-collapse preview
-        View rootView = getWindow().getDecorView();
-        rootView.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
-            Rect r = new Rect();
-            rootView.getWindowVisibleDisplayFrame(r);
-            int screenHeight = rootView.getHeight();
-            int keypadHeight = screenHeight - r.bottom;
-            boolean keyboardNowVisible = keypadHeight > screenHeight * 0.15;
-
-            if (keyboardNowVisible && !isKeyboardVisible) {
-                isKeyboardVisible = true;
-                if (isPreviewVisible && bottomSheetBehavior != null) {
-                    int state = bottomSheetBehavior.getState();
-                    if (state == BottomSheetBehavior.STATE_EXPANDED ||
-                        state == BottomSheetBehavior.STATE_HALF_EXPANDED) {
-                        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
-                    }
-                }
-            } else if (!keyboardNowVisible && isKeyboardVisible) {
-                isKeyboardVisible = false;
-            }
-        });
-
-        // Real-time content change listener (400ms debounce)
-        binding.editor.subscribeEvent(ContentChangeEvent.class, (event, unsubscribe) -> {
-            if (isPreviewVisible) {
-                previewHandler.removeCallbacks(previewRunnable);
-                previewHandler.postDelayed(previewRunnable, 400);
-            }
-        });
-    }
-
-    private void togglePreview() {
-        if (bottomSheetBehavior == null) {
-            // Fallback: open as separate activity
-            toLayoutPreview();
-            return;
-        }
-
-        int state = bottomSheetBehavior.getState();
-        if (state == BottomSheetBehavior.STATE_HIDDEN) {
-            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HALF_EXPANDED);
-        } else {
-            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
-        }
-    }
-
-    private void updatePreview() {
-        FrameLayout container = binding.previewPaneContainer;
-        container.removeAllViews();
-
-        String xml = binding.editor.getText().toString();
-        if (xml.trim().isEmpty()) {
-            showPreviewError("Empty XML content");
-            return;
-        }
-
-        try {
-            ViewPane pane = new ViewPane(this);
-            pane.initialize(scId, true);
-            pane.updateRootLayout(scId, getIntent().getStringExtra("title"));
-            pane.setVerticalScrollBarEnabled(true);
-            pane.setResourceManager(jC.d(scId));
-
-            ViewBeanParser parser = new ViewBeanParser(xml);
-            ArrayList<ViewBean> views = parser.parse();
-
-            for (int i = 0; i < views.size(); i++) {
-                ViewBean view = views.get(i);
-                if (i == 0) {
-                    view.parent = "root";
-                    view.parentType = 0;
-                    view.preParent = null;
-                    view.preParentType = -1;
-                }
-                var itemView = pane.createItemView(view);
-                pane.addViewAndUpdateIndex(itemView);
-                if (itemView instanceof com.besome.sketch.editor.view.ItemView iv) {
-                    iv.setFixed(true);
-                }
-            }
-
-            container.addView(pane, new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT));
-            binding.previewError.setVisibility(View.GONE);
-        } catch (Exception e) {
-            showPreviewError(e.getMessage() != null ? e.getMessage() : "Failed to parse XML");
-        }
-    }
-
-    private void showPreviewError(String message) {
-        binding.previewPaneContainer.removeAllViews();
-        binding.previewError.setText(message);
-        binding.previewError.setVisibility(View.VISIBLE);
-    }
+    private boolean isFileInLayoutFolder() { String content = getIntent().getStringExtra("content"); if (content != null) { File file = new File(content); if (content.contains("/resource/layout/")) { String layoutFolder = file.getParent(); return layoutFolder != null && layoutFolder.endsWith("/resource/layout"); } } return false; }
+    private void toLayoutPreview() { Intent intent = new Intent(getApplicationContext(), LayoutPreviewActivity.class); intent.putExtras(getIntent()); intent.putExtra("xml", binding.editor.getText().toString()); startActivity(intent); }
+    private void setupRealtimePreview() { previewHandler = new Handler(Looper.getMainLooper()); bottomSheetBehavior = BottomSheetBehavior.from(binding.previewContainer); bottomSheetBehavior.setHideable(true); bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN); bottomSheetBehavior.setFitToContents(false); bottomSheetBehavior.setHalfExpandedRatio(0.45f); bottomSheetBehavior.addBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() { @Override public void onStateChanged(@NonNull View bottomSheet, int newState) { if (newState == BottomSheetBehavior.STATE_HIDDEN) { isPreviewVisible = false; binding.previewPaneContainer.removeAllViews(); if (previewHandler != null) previewHandler.removeCallbacks(previewRunnable); } else if (!isPreviewVisible && (newState == BottomSheetBehavior.STATE_COLLAPSED || newState == BottomSheetBehavior.STATE_HALF_EXPANDED || newState == BottomSheetBehavior.STATE_EXPANDED)) { isPreviewVisible = true; updatePreview(); } } @Override public void onSlide(@NonNull View bottomSheet, float slideOffset) {} }); View rootView = getWindow().getDecorView(); rootView.getViewTreeObserver().addOnGlobalLayoutListener(() -> { Rect r = new Rect(); rootView.getWindowVisibleDisplayFrame(r); int screenHeight = rootView.getHeight(); int keypadHeight = screenHeight - r.bottom; boolean keyboardNowVisible = keypadHeight > screenHeight * 0.15; if (keyboardNowVisible && !isKeyboardVisible) { isKeyboardVisible = true; if (isPreviewVisible && bottomSheetBehavior != null) { int state = bottomSheetBehavior.getState(); if (state == BottomSheetBehavior.STATE_EXPANDED || state == BottomSheetBehavior.STATE_HALF_EXPANDED) bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED); } } else if (!keyboardNowVisible && isKeyboardVisible) isKeyboardVisible = false; }); binding.editor.subscribeEvent(ContentChangeEvent.class, (event, unsubscribe) -> { if (isPreviewVisible) { previewHandler.removeCallbacks(previewRunnable); previewHandler.postDelayed(previewRunnable, 400); } }); }
+    private void togglePreview() { if (bottomSheetBehavior == null) { toLayoutPreview(); return; } int state = bottomSheetBehavior.getState(); if (state == BottomSheetBehavior.STATE_HIDDEN) bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HALF_EXPANDED); else bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN); }
+    private void updatePreview() { FrameLayout container = binding.previewPaneContainer; container.removeAllViews(); String xml = binding.editor.getText().toString(); if (xml.trim().isEmpty()) { showPreviewError("Empty XML content"); return; } try { ViewPane pane = new ViewPane(this); pane.initialize(scId, true); pane.updateRootLayout(scId, getIntent().getStringExtra("title")); pane.setVerticalScrollBarEnabled(true); pane.setResourceManager(jC.d(scId)); ArrayList<ViewBean> views = new ViewBeanParser(xml).parse(); for (int i = 0; i < views.size(); i++) { ViewBean view = views.get(i); if (i == 0) { view.parent = "root"; view.parentType = 0; view.preParent = null; view.preParentType = -1; } var itemView = pane.createItemView(view); pane.addViewAndUpdateIndex(itemView); if (itemView instanceof com.besome.sketch.editor.view.ItemView iv) iv.setFixed(true); } container.addView(pane, new FrameLayout.LayoutParams(-1, -1)); binding.previewError.setVisibility(View.GONE); } catch (Exception e) { showPreviewError(e.getMessage() != null ? e.getMessage() : "Failed to parse XML"); } }
+    private void showPreviewError(String message) { binding.previewPaneContainer.removeAllViews(); binding.previewError.setText(message); binding.previewError.setVisibility(View.VISIBLE); }
 }
