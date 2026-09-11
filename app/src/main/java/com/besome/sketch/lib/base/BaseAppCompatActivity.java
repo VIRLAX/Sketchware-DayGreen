@@ -38,7 +38,9 @@ public abstract class BaseAppCompatActivity extends AppCompatActivity {
     private ArrayList<MA> taskList;
     private static final String ACTION_THEME_CHANGED = "THEME_CHANGED";
     private boolean isReceiverRegistered = false;
-    private final BroadcastReceiver themeChangeReceiver = new BroadcastReceiver() { @Override public void onReceive(Context context, Intent intent) { recreate(); } };
+    private final BroadcastReceiver appRefreshReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) { recreate(); }
+    };
 
     @Override protected void attachBaseContext(Context base) { super.attachBaseContext(LocaleManager.apply(base)); }
     public void a(MA var1) { taskList.add(var1); }
@@ -53,8 +55,19 @@ public abstract class BaseAppCompatActivity extends AppCompatActivity {
     public void k() { if (lottieDialog != null && !lottieDialog.isShowing() && !isFinishing()) lottieDialog.show(); }
 
     @Override public void onCreate(Bundle savedInstanceState) { super.onCreate(savedInstanceState); e = getApplicationContext(); taskList = new ArrayList<>(); lottieDialog = new LoadingDialog(this); lC.a(getApplicationContext(), false); progressDialog = new ProgressDialog(this); mAnalytics = FirebaseAnalytics.getInstance(this); }
-    @Override public void onResume() { super.onResume(); if (lottieDialog != null && lottieDialog.isShowing()) lottieDialog.resumeAnimation(); if (!isReceiverRegistered) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(themeChangeReceiver, new IntentFilter(ACTION_THEME_CHANGED), Context.RECEIVER_NOT_EXPORTED); else registerReceiver(themeChangeReceiver, new IntentFilter(ACTION_THEME_CHANGED)); isReceiverRegistered = true; } }
-    @Override public void onPause() { if (lottieDialog != null && lottieDialog.isShowing()) lottieDialog.pauseAnimation(); if (isReceiverRegistered) { unregisterReceiver(themeChangeReceiver); isReceiverRegistered = false; } super.onPause(); }
+    @Override public void onResume() {
+        super.onResume();
+        if (lottieDialog != null && lottieDialog.isShowing()) lottieDialog.resumeAnimation();
+        if (!isReceiverRegistered) {
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(ACTION_THEME_CHANGED);
+            filter.addAction(LocaleManager.ACTION_LOCALE_CHANGED);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(appRefreshReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            else registerReceiver(appRefreshReceiver, filter);
+            isReceiverRegistered = true;
+        }
+    }
+    @Override public void onPause() { if (lottieDialog != null && lottieDialog.isShowing()) lottieDialog.pauseAnimation(); if (isReceiverRegistered) { unregisterReceiver(appRefreshReceiver); isReceiverRegistered = false; } super.onPause(); }
     @Override public void onDestroy() { g(); if (lottieDialog != null && lottieDialog.isShowing()) lottieDialog.cancelAnimation(); super.onDestroy(); }
     @Override public boolean onCreateOptionsMenu(Menu menu) { return parent != null ? parent.onCreateOptionsMenu(menu) : true; }
     @Override public boolean onOptionsItemSelected(@NonNull MenuItem item) { return parent != null ? parent.onOptionsItemSelected(item) : false; }
