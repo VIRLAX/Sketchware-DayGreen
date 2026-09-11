@@ -1,31 +1,26 @@
 package pro.sketchware.utility;
 
 import org.xml.sax.SAXParseException;
-
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import javax.xml.parsers.DocumentBuilderFactory;
 
-/** Offline, deterministic diagnostics for editor content. No network or build side effects. */
+/** Offline deterministic diagnostics. It never runs a build or calls a network service. */
 public final class RealtimeDiagnostics {
     public enum Kind { XML, JAVA, KOTLIN, BLOCKS }
     public record Issue(Kind kind, int line, int column, String severity, String message, String hint) {}
-
     private RealtimeDiagnostics() {}
 
     public static List<Issue> check(Kind kind, String source) {
         List<Issue> issues = new ArrayList<>();
         if (source == null || source.trim().isEmpty()) return issues;
-        switch (kind) {
-            case XML -> checkXml(source, issues);
-            case JAVA, KOTLIN -> checkBraces(kind, source, issues);
-            case BLOCKS -> checkBraces(kind, source, issues);
-        }
+        if (kind == Kind.XML) checkXml(source, issues);
+        else if (kind == Kind.JAVA || kind == Kind.KOTLIN) checkCode(kind, source, issues);
+        else checkBraces(kind, source, issues);
         return issues;
     }
 
@@ -36,29 +31,43 @@ public final class RealtimeDiagnostics {
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             factory.newDocumentBuilder().parse(new ByteArrayInputStream(source.getBytes(StandardCharsets.UTF_8)));
         } catch (SAXParseException e) {
-            issues.add(new Issue(Kind.XML, e.getLineNumber(), e.getColumnNumber(), "error", e.getMessage(), "Close the missing tag or fix the attribute near this location."));
+            issues.add(new Issue(Kind.XML, e.getLineNumber(), e.getColumnNumber(), "error", e.getMessage(), "Fix the tag or attribute at this location."));
         } catch (Exception e) {
-            issues.add(new Issue(Kind.XML, lineOf(source, 0), 1, "error", safeMessage(e), "Check XML structure, namespace declarations, and attribute quoting."));
+            issues.add(new Issue(Kind.XML, 1, 1, "error", safeMessage(e), "Check XML structure, namespaces, and quoted attributes."));
         }
         Matcher unquoted = Pattern.compile("\\s+[A-Za-z_:][\\w:.-]*=\\s*(?![\\\"])\\S+").matcher(source);
         if (unquoted.find()) issues.add(new Issue(Kind.XML, lineOf(source, unquoted.start()), 1, "error", "Attribute value must be quoted.", "Use attr=\"value\"."));
     }
 
-    private static void checkBraces(Kind kind, String source, List<Issue> issues) {
-        int round = 0, curly = 0, square = 0;
-        for (int i = 0; i < source.length(); i++) {
-            char c = source.charAt(i);
-            if (c == '(') round++; else if (c == ')') round--;
-            else if (c == '{') curly++; else if (c == '}') curly--;
-            else if (c == '[') square++; else if (c == ']') square--;
-            if (round < 0 || curly < 0 || square < 0) {
-                issues.add(new Issue(kind, lineOf(source, i), 1, "error", "Closing bracket has no matching opening bracket.", "Check the surrounding block and indentation."));
-                return;
-            }
+    private static void checkCode(Kind kind, String source, List<Issue> issues) {
+        checkBraces(kind, source, issues);
+        String[] lines = source.split("\\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i].trim();
+            if (line.isEmpty() || line.startsWith("//") || line.startsWith("/*") || line.startsWith("*") || line.startsWith("#")) continue;
+            if (kind == Kind.JAVA && line.matches(".*\\b(class|interface|enum)\\s+[A-Za-z_$][\\w$]*\\.[A-Za-z_$][\\w$]*.*")) add(issues, kind, i + 1, "A class name cannot contain a dot.", "Rename the class using a valid identifier, for example Test.");
+            if (kind == Kind.JAVA && line.matches(".*\\b(string|integer|boolean|float|double)\\s+[A-Za-z_$].*")) add(issues, kind, i + 1, "Java type names are case-sensitive.", "Use String, Integer, Boolean, Float, or Double.");
+            if (line.matches("\\s*(public|private|protected)\\s+[A-Za-z_$][\\w$]*\\s*\\(.*") && !line.matches(".*\\b(class|interface|enum)\\b.*")) add(issues, kind, i + 1, "Method declaration is missing a return type.", "Use a return type such as void, or make it a valid constructor.");
+            if (line.matches(".*\\bToast\\.makeText\\s*\\(.*") && !line.endsWith(";")) add(issues, kind, i + 1, "Statement is missing a semicolon.", "Terminate the Toast statement with ;.");
+            if (kind == Kind.KOTLIN && line.matches(".*\\b(var|val)\\s+[A-Za-z_$][\\w$]*\\s*=.*") && line.contains("String")) continue;
         }
-        if (round != 0 || curly != 0 || square != 0) issues.add(new Issue(kind, lineOf(source, source.length()), 1, "error", "Unbalanced brackets or braces.", "Every opening bracket must have a matching closing bracket."));
     }
 
+    private static void checkBraces(Kind kind, String source, List<Issue> issues) {
+        int round = 0, curly = 0, square = 0;
+        boolean inString = false, escaped = false;
+        for (int i = 0; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '"' && !escaped) inString = !inString;
+            escaped = c == '\\' && !escaped;
+            if (inString) continue;
+            if (c == '(') round++; else if (c == ')') round--; else if (c == '{') curly++; else if (c == '}') curly--; else if (c == '[') square++; else if (c == ']') square--;
+            if (round < 0 || curly < 0 || square < 0) { add(issues, kind, lineOf(source, i), "Closing bracket has no matching opening bracket.", "Check the surrounding block and indentation."); return; }
+        }
+        if (round != 0 || curly != 0 || square != 0) add(issues, kind, lineOf(source, source.length()), "Unbalanced brackets or braces.", "Every opening bracket must have a matching closing bracket.");
+    }
+
+    private static void add(List<Issue> issues, Kind kind, int line, String message, String hint) { issues.add(new Issue(kind, line, 1, "error", message, hint)); }
     private static int lineOf(String source, int index) { return (int) source.substring(0, Math.min(index, source.length())).chars().filter(c -> c == '\n').count() + 1; }
     private static String safeMessage(Exception e) { return e.getMessage() == null ? "Invalid source structure." : e.getMessage(); }
 }
