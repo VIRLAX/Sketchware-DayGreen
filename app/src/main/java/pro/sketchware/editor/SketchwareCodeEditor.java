@@ -32,11 +32,8 @@ import io.github.rosemoe.sora.widget.CodeEditor;
 import pro.sketchware.R;
 import pro.sketchware.activities.resourceseditor.components.utils.ColorsEditorManager;
 import pro.sketchware.editor.diagnostics.SquigglyLineRenderer;
-import pro.sketchware.utility.EditorUtils;
 import pro.sketchware.utility.RealtimeDiagnostics;
 import pro.sketchware.utility.ThemeUtils;
-
-import a.a.a.wq;
 
 public class SketchwareCodeEditor extends CodeEditor {
     private static final Pattern RESOURCE_PATTERN = Pattern.compile(
@@ -52,17 +49,9 @@ public class SketchwareCodeEditor extends CodeEditor {
     private final Map<String, Drawable> iconCache = new HashMap<>();
     private List<RealtimeDiagnostics.Issue> diagnostics = List.of();
 
-    public SketchwareCodeEditor(Context context) {
-        super(context);
-    }
-
-    public SketchwareCodeEditor(Context context, AttributeSet attrs) {
-        super(context, attrs);
-    }
-
-    public SketchwareCodeEditor(Context context, AttributeSet attrs, int defStyleAttr) {
-        super(context, attrs, defStyleAttr);
-    }
+    public SketchwareCodeEditor(Context context) { super(context); }
+    public SketchwareCodeEditor(Context context, AttributeSet attrs) { super(context, attrs); }
+    public SketchwareCodeEditor(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
 
     public void setScId(String id) {
         if (id != null && !id.equals(currentScId)) {
@@ -73,8 +62,11 @@ public class SketchwareCodeEditor extends CodeEditor {
         }
     }
 
+    /** Only redraw diagnostics when the result actually changed, preventing visible blinking. */
     public void setDiagnostics(List<RealtimeDiagnostics.Issue> issues) {
-        diagnostics = issues == null ? List.of() : new ArrayList<>(issues);
+        List<RealtimeDiagnostics.Issue> next = issues == null ? List.of() : new ArrayList<>(issues);
+        if (diagnostics.equals(next)) return;
+        diagnostics = next;
         rerunAnalysis();
     }
 
@@ -100,9 +92,7 @@ public class SketchwareCodeEditor extends CodeEditor {
 
         if (range == null) {
             styles.eraseAllLineStyles();
-            for (int i = 0; i < count; i++) {
-                processLine(i, content, modifier, reader, styles);
-            }
+            for (int i = 0; i < count; i++) processLine(i, content, modifier, reader, styles);
         } else {
             var iterator = range.lineIndexIterator(count);
             while (iterator.hasNext()) {
@@ -129,9 +119,7 @@ public class SketchwareCodeEditor extends CodeEditor {
             String match = matcher.group();
             int color = resolveColor(match);
             if (color != 0) {
-                if (modifier != null && addBoundedColorSpan(spans, matcher.start(), matcher.end(), color)) {
-                    modified = true;
-                }
+                if (modifier != null && addBoundedColorSpan(spans, matcher.start(), matcher.end(), color)) modified = true;
                 if (!iconAdded) {
                     styles.addLineStyle(new LineSideIcon(line, getIconForColor(color)));
                     iconAdded = true;
@@ -219,8 +207,7 @@ public class SketchwareCodeEditor extends CodeEditor {
                     return drawable;
                 }
             }
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) { }
         return null;
     }
 
@@ -238,9 +225,7 @@ public class SketchwareCodeEditor extends CodeEditor {
             if (value.startsWith("R.color.")) return resolveXmlColor("@color/" + value.substring(8));
             if (value.contains("Color.")) return resolveColorConstant(value.substring(value.lastIndexOf('.') + 1));
             return resolveXmlColor(value);
-        } catch (Exception ignored) {
-            return 0;
-        }
+        } catch (Exception ignored) { return 0; }
     }
 
     private int resolveXmlColor(String value) {
@@ -249,9 +234,7 @@ public class SketchwareCodeEditor extends CodeEditor {
             String hex = colorsManager.getColorValue(getContext(), value, 4,
                     ThemeUtils.isDarkThemeEnabled(getContext()));
             return hex == null || hex.equals("#00000000") ? 0 : Color.parseColor(hex);
-        } catch (Exception ignored) {
-            return 0;
-        }
+        } catch (Exception ignored) { return 0; }
     }
 
     private int resolveColorConstant(String value) {
@@ -277,20 +260,11 @@ public class SketchwareCodeEditor extends CodeEditor {
         getOrCreateSpanAt(spans, end);
         int textColor = ColorPreviewRenderer.isDarkColor(color) ? Color.WHITE : Color.BLACK;
         SpanColorResolver resolver = new SpanColorResolver() {
-            @Override
-            public ResolvableColor getForegroundColor(Span span) {
-                return scheme -> textColor;
-            }
-
-            @Override
-            public ResolvableColor getBackgroundColor(Span span) {
-                return null;
-            }
+            @Override public ResolvableColor getForegroundColor(Span span) { return scheme -> textColor; }
+            @Override public ResolvableColor getBackgroundColor(Span span) { return null; }
         };
         List<Span> affected = new ArrayList<>();
-        for (Span span : spans) {
-            if (span.getColumn() >= start && span.getColumn() < end) affected.add(span);
-        }
+        for (Span span : spans) if (span.getColumn() >= start && span.getColumn() < end) affected.add(span);
         for (int i = 0; i < affected.size(); i++) {
             Span span = affected.get(i);
             span.setSpanExt(SpanExtAttrs.EXT_EXTERNAL_RENDERER,

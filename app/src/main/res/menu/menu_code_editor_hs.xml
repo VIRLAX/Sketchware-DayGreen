@@ -15,8 +15,25 @@
         app:showAsAction="always" />
 
     <item
+        android:id="@+id/action_save"
+        android:title="Save"
+        android:icon="@drawable/ic_mtrl_save"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/action_diagnostics"
+        android:title="Errors (0)"
+        android:icon="@drawable/ic_mtrl_bug_report"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/action_paste"
         android:title="Paste"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_find_replace"
+        android:title="Find &amp; Replace"
         app:showAsAction="never" />
 
     <item
@@ -31,8 +48,13 @@
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/action_find_replace"
-        android:title="Find &amp; Replace"
+        android:id="@+id/action_select_language"
+        android:title="Select language"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_select_theme"
+        android:title="Select theme"
         app:showAsAction="never" />
 
     <item
@@ -47,5 +69,9 @@
         android:title="Auto complete symbol pair"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_layout_preview"
+        android:title="Layout Preview"
+        android:visible="false"
+        app:showAsAction="never" />
 </menu>
-

@@ -1,33 +1,374 @@
 package mod.hey.studios.code;
 
 import static pro.sketchware.utility.GsonUtils.getGson;
-import android.app.Activity; import android.content.Context; import android.content.DialogInterface; import android.content.Intent; import android.content.SharedPreferences; import android.os.Bundle; import android.os.Handler; import android.os.Looper; import android.util.Pair; import android.view.Menu; import android.view.MenuItem; import android.view.View; import android.widget.TextView;
-import androidx.annotation.Nullable; import androidx.appcompat.content.res.AppCompatResources; import androidx.recyclerview.widget.LinearLayoutManager;
-import com.besome.sketch.lib.base.BaseAppCompatActivity; import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import java.io.File; import java.util.ArrayList; import java.util.Arrays; import java.util.HashMap; import java.util.List; import java.util.Map;
-import io.github.rosemoe.sora.langs.java.JavaLanguage; import io.github.rosemoe.sora.widget.CodeEditor; import io.github.rosemoe.sora.widget.component.EditorAutoCompletion; import io.github.rosemoe.sora.widget.schemes.EditorColorScheme; import io.github.rosemoe.sora.widget.schemes.SchemeDarcula; import io.github.rosemoe.sora.widget.schemes.SchemeEclipse; import io.github.rosemoe.sora.widget.schemes.SchemeGitHub; import io.github.rosemoe.sora.widget.schemes.SchemeNotepadXX; import io.github.rosemoe.sora.widget.schemes.SchemeVS2019;
-import mod.jbk.code.CodeEditorColorSchemes; import mod.jbk.code.CodeEditorLanguages; import mod.hey.studios.util.Helper; import pro.sketchware.R; import pro.sketchware.activities.preview.LayoutPreviewActivity; import pro.sketchware.databinding.CodeEditorHsBinding; import pro.sketchware.editor.diagnostics.DiagnosticsAdapter; import pro.sketchware.utility.EditorUtils; import pro.sketchware.utility.FileUtil; import pro.sketchware.utility.RealtimeDiagnostics; import pro.sketchware.utility.SketchwareUtil; import pro.sketchware.utility.ThemeUtils; import pro.sketchware.utility.UI; import pro.sketchware.utility.XmlSyncHelper;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Pair;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.widget.TextView;
+
+import androidx.annotation.Nullable;
+import androidx.appcompat.content.res.AppCompatResources;
+import androidx.recyclerview.widget.LinearLayoutManager;
+
+import com.besome.sketch.lib.base.BaseAppCompatActivity;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import io.github.rosemoe.sora.langs.java.JavaLanguage;
+import io.github.rosemoe.sora.widget.CodeEditor;
+import io.github.rosemoe.sora.widget.component.EditorAutoCompletion;
+import io.github.rosemoe.sora.widget.schemes.EditorColorScheme;
+import io.github.rosemoe.sora.widget.schemes.SchemeDarcula;
+import io.github.rosemoe.sora.widget.schemes.SchemeEclipse;
+import io.github.rosemoe.sora.widget.schemes.SchemeGitHub;
+import io.github.rosemoe.sora.widget.schemes.SchemeNotepadXX;
+import io.github.rosemoe.sora.widget.schemes.SchemeVS2019;
+
+import mod.hey.studios.util.Helper;
+import mod.jbk.code.CodeEditorColorSchemes;
+import mod.jbk.code.CodeEditorLanguages;
+import pro.sketchware.R;
+import pro.sketchware.activities.preview.LayoutPreviewActivity;
+import pro.sketchware.databinding.CodeEditorHsBinding;
+import pro.sketchware.editor.diagnostics.DiagnosticsAdapter;
+import pro.sketchware.utility.EditorUtils;
+import pro.sketchware.utility.FileUtil;
+import pro.sketchware.utility.RealtimeDiagnostics;
+import pro.sketchware.utility.SketchwareUtil;
+import pro.sketchware.utility.ThemeUtils;
+import pro.sketchware.utility.UI;
+import pro.sketchware.utility.XmlSyncHelper;
 
 public class SrcCodeEditor extends BaseAppCompatActivity {
- public static final String FLAG_FROM_ANDROID_MANIFEST="from_android_manifest"; public static final List<Pair<String,Class<? extends EditorColorScheme>>> KNOWN_COLOR_SCHEMES=List.of(new Pair<>("Default",EditorColorScheme.class),new Pair<>("GitHub",SchemeGitHub.class),new Pair<>("Eclipse",SchemeEclipse.class),new Pair<>("Darcula",SchemeDarcula.class),new Pair<>("VS2019",SchemeVS2019.class),new Pair<>("NotepadXX",SchemeNotepadXX.class)); public static SharedPreferences pref; public static int languageId;
- private final Handler diagnosticsHandler=new Handler(Looper.getMainLooper()); private final Map<String,String> workingContents=new HashMap<>(); private CodeEditorHsBinding binding; private boolean fromAndroidManifest; private String scId,activityName,beforeContent="",currentPath,currentTitle; private MenuItem diagnosticsMenuItem; private DiagnosticsAdapter diagnosticsAdapter; private final Runnable diagnosticsRunnable=new Runnable(){@Override public void run(){refreshDiagnostics();diagnosticsHandler.postDelayed(this,280);}};
- public static void loadCESettings(Context c,CodeEditor e,String p){loadCESettings(c,e,p,false);} public static void loadCESettings(Context c,CodeEditor e,String p,boolean theme){pref=c.getSharedPreferences("hsce",Activity.MODE_PRIVATE);e.setTextSize(pref.getInt(p+"_ts",12));e.setWordwrap(pref.getBoolean(p+"_ww",false));e.getProps().symbolPairAutoCompletion=pref.getBoolean(p+"_acsp",true);e.getComponent(EditorAutoCompletion.class).setEnabled(pref.getBoolean(p+"_ac",true));if(theme)selectTheme(e,0);}
- public static void selectTheme(CodeEditor e,int ignored){String t=ThemeUtils.isDarkThemeEnabled(e.getContext())?CodeEditorColorSchemes.THEME_GITHUB_DARK:CodeEditorColorSchemes.THEME_GITHUB_LIGHT;e.setColorScheme(CodeEditorColorSchemes.loadTextMateColorScheme(t));EditorUtils.getMaterialStyledScheme(e,true);e.rerunAnalysis();}
- public static void selectLanguage(CodeEditor e,int w){if(w==1){e.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN));languageId=1;}else if(w==2){e.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_XML));languageId=2;}else{e.setEditorLanguage(new JavaLanguage());languageId=0;}}
- public static String prettifyXml(String x,int i,Intent e){return x==null?null:x.trim();} public static void a(StringBuilder b,int n){for(int i=0;i<n;i++)b.append('\t');} public static void showSwitchThemeDialog(Activity a,CodeEditor e,DialogInterface.OnClickListener l){new MaterialAlertDialogBuilder(a).setTitle("Select Theme").setSingleChoiceItems(new String[]{"Default (Dynamic)","GitHub Light","GitHub Dark","Eclipse","VS2019","NotepadXX"},0,l).setNegativeButton(R.string.common_word_cancel,null).show();} public static void showSwitchLanguageDialog(Activity a,CodeEditor e,DialogInterface.OnClickListener l){new MaterialAlertDialogBuilder(a).setTitle("Select Language").setSingleChoiceItems(new CharSequence[]{"Java","Kotlin","XML"},languageId,l).setNegativeButton(R.string.common_word_cancel,null).show();}
- @Override public void onCreate(@Nullable Bundle s){enableEdgeToEdgeNoContrast();super.onCreate(s);binding=CodeEditorHsBinding.inflate(getLayoutInflater());setContentView(binding.getRoot());pref=getSharedPreferences("hsce",Activity.MODE_PRIVATE);fromAndroidManifest=getIntent().getBooleanExtra(FLAG_FROM_ANDROID_MANIFEST,false);scId=getIntent().getStringExtra("sc_id");activityName=getIntent().getStringExtra("activity_name");currentPath=getIntent().getStringExtra("content");currentTitle=getIntent().getStringExtra("title");binding.editor.setScId(scId);binding.editor.setTypefaceText(EditorUtils.getTypeface(this));binding.editor.setTextSize(16);beforeContent=loadInitialContent();binding.editor.setText(beforeContent);loadLanguageForTitle(currentTitle);setSupportActionBar(binding.toolbar);binding.toolbar.setTitle(currentTitle);binding.toolbar.setNavigationOnClickListener(Helper.getBackPressedClickListener(this));diagnosticsAdapter=new DiagnosticsAdapter(issue->{binding.diagnosticsPanel.setVisibility(View.GONE);binding.editor.setSelection(Math.max(0,issue.line()-1),Math.max(0,issue.column()-1));binding.editor.requestFocus();});binding.diagnosticsPanel.setLayoutManager(new LinearLayoutManager(this));binding.diagnosticsPanel.setAdapter(diagnosticsAdapter);buildFileTabs();loadToolbar();UI.addSystemWindowInsetToPadding(binding.appBarLayout,true,true,true,false);UI.addSystemWindowInsetToMargin(binding.editor,true,false,true,true);}
- private String loadInitialContent(){if(fromAndroidManifest)return readManifestContent();return currentPath==null?getIntent().getStringExtra("code"):FileUtil.readFile(currentPath);}
- private String readManifestContent(){String p=FileUtil.getExternalStorageDir()+"/.sketchware/data/"+scId+"/Injection/androidmanifest/activities_components.json";if(!FileUtil.isExistFile(p))return"";ArrayList<HashMap<String,Object>> list=getGson().fromJson(FileUtil.readFile(p),Helper.TYPE_MAP_LIST);for(HashMap<String,Object> i:list)if(String.valueOf(i.get("name")).equals(activityName))return String.valueOf(i.get("value"));return"";}
- private void buildFileTabs(){binding.fileTabs.removeAllViews();if(fromAndroidManifest||currentPath==null||currentTitle==null||(!currentTitle.endsWith(".java")&&!currentTitle.endsWith(".kt"))){binding.tabScroll.setVisibility(View.GONE);return;}File parent=new File(currentPath).getParentFile();File[] files=parent==null?null:parent.listFiles(f->f.isFile()&&(f.getName().endsWith(".java")||f.getName().endsWith(".kt")));if(files==null||files.length<2){binding.tabScroll.setVisibility(View.GONE);return;}Arrays.sort(files,(a,b)->a.getName().compareToIgnoreCase(b.getName()));binding.tabScroll.setVisibility(View.VISIBLE);for(File f:files){TextView tab=new TextView(this);tab.setText(f.getName());tab.setTextSize(13);tab.setSingleLine(true);tab.setGravity(17);tab.setPadding(28,0,28,0);tab.setMinWidth(120);tab.setOnClickListener(v->switchTab(f));binding.fileTabs.addView(tab);}updateTabStyles();}
- private void updateTabStyles(){for(int i=0;i<binding.fileTabs.getChildCount();i++){TextView t=(TextView)binding.fileTabs.getChildAt(i);boolean selected=t.getText().toString().equals(currentTitle);t.setBackgroundColor(selected?0xFF263238:0xFF172024);t.setTextColor(selected?0xFF42A5F5:0xFF90A4AE);}}
- private void switchTab(File f){if(f.getAbsolutePath().equals(currentPath))return;workingContents.put(currentPath,binding.editor.getText().toString());currentPath=f.getAbsolutePath();currentTitle=f.getName();beforeContent=FileUtil.readFile(currentPath);binding.editor.setText(workingContents.containsKey(currentPath)?workingContents.get(currentPath):beforeContent);binding.toolbar.setTitle(currentTitle);loadLanguageForTitle(currentTitle);updateTabStyles();refreshDiagnostics();}
- private void loadLanguageForTitle(String title){if(title==null)return;if(fromAndroidManifest||title.endsWith(".xml")){EditorUtils.loadXmlConfig(binding.editor,fromAndroidManifest?"AndroidManifest.xml":currentPath);languageId=2;}else if(title.endsWith(".java")){EditorUtils.loadJavaConfig(binding.editor);languageId=0;}else if(title.endsWith(".kt")){binding.editor.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN));selectTheme(binding.editor,0);languageId=1;}else selectLanguage(binding.editor,0);}
- private RealtimeDiagnostics.Kind currentKind(){if(fromAndroidManifest||(currentTitle!=null&&currentTitle.endsWith(".xml")))return RealtimeDiagnostics.Kind.XML;if(currentTitle!=null&&currentTitle.endsWith(".kt"))return RealtimeDiagnostics.Kind.KOTLIN;return RealtimeDiagnostics.Kind.JAVA;}
- private void refreshDiagnostics(){if(binding==null)return;List<RealtimeDiagnostics.Issue> issues=RealtimeDiagnostics.check(currentKind(),binding.editor.getText().toString());binding.editor.setDiagnostics(issues);diagnosticsAdapter.submitList(new ArrayList<>(issues));if(diagnosticsMenuItem!=null)diagnosticsMenuItem.setTitle("Errors ("+issues.size()+")");}
- private void loadToolbar(){Menu m=binding.toolbar.getMenu();m.clear();m.add(Menu.NONE,1,Menu.NONE,"Undo").setIcon(AppCompatResources.getDrawable(this,R.drawable.ic_mtrl_undo)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);m.add(Menu.NONE,2,Menu.NONE,"Redo").setIcon(AppCompatResources.getDrawable(this,R.drawable.ic_mtrl_redo)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);m.add(Menu.NONE,3,Menu.NONE,"Save").setIcon(AppCompatResources.getDrawable(this,R.drawable.ic_mtrl_save)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);diagnosticsMenuItem=m.add(Menu.NONE,4,Menu.NONE,"Errors (0)");diagnosticsMenuItem.setIcon(AppCompatResources.getDrawable(this,R.drawable.ic_mtrl_bug_report));diagnosticsMenuItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);m.add("Find & Replace");m.add("Word wrap").setCheckable(true).setChecked(pref.getBoolean("act_ww",false));m.add("Pretty print");m.add("Select language");m.add("Auto complete").setCheckable(true).setChecked(pref.getBoolean("act_ac",true));if(isFileInLayoutFolder())m.add("Layout Preview");binding.toolbar.setOnMenuItemClickListener(item->{String title=item.getTitle().toString();if(item.getItemId()==1)binding.editor.undo();else if(item.getItemId()==2)binding.editor.redo();else if(item.getItemId()==3)save();else if(item.getItemId()==4||title.startsWith("Errors"))binding.diagnosticsPanel.setVisibility(binding.diagnosticsPanel.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);else if(title.equals("Word wrap")){item.setChecked(!item.isChecked());binding.editor.setWordwrap(item.isChecked());pref.edit().putBoolean("act_ww",item.isChecked()).apply();}else if(title.equals("Auto complete")){item.setChecked(!item.isChecked());binding.editor.getComponent(EditorAutoCompletion.class).setEnabled(item.isChecked());pref.edit().putBoolean("act_ac",item.isChecked()).apply();}else if(title.equals("Select language"))showSwitchLanguageDialog(this,binding.editor,(d,w)->{selectLanguage(binding.editor,w);d.dismiss();refreshDiagnostics();});else if(title.equals("Layout Preview"))toLayoutPreview();return true;});}
- private void save(){String text=binding.editor.getText().toString();if(fromAndroidManifest){saveManifest(text);beforeContent=text;SketchwareUtil.toast("Saved");return;}if(currentPath==null){SketchwareUtil.toastError("File path is missing");return;}FileUtil.writeFile(currentPath,text);workingContents.remove(currentPath);beforeContent=text;if(currentTitle!=null&&currentTitle.endsWith(".xml"))XmlSyncHelper.syncXml(this,scId,currentTitle,text);SketchwareUtil.toast("Saved");refreshDiagnostics();}
- private void saveManifest(String text){String p=FileUtil.getExternalStorageDir()+"/.sketchware/data/"+scId+"/Injection/androidmanifest/activities_components.json";ArrayList<HashMap<String,Object>> list=FileUtil.isExistFile(p)?getGson().fromJson(FileUtil.readFile(p),Helper.TYPE_MAP_LIST):new ArrayList<>();boolean found=false;for(HashMap<String,Object> i:list)if(String.valueOf(i.get("name")).equals(activityName)){i.put("value",text);found=true;}if(!found){HashMap<String,Object> i=new HashMap<>();i.put("name",activityName);i.put("value",text);list.add(i);}FileUtil.writeFile(p,getGson().toJson(list));}
- private boolean isFileInLayoutFolder(){return currentPath!=null&&currentPath.contains("/resource/layout/")&&currentPath.endsWith(".xml");}
- private void toLayoutPreview(){Intent i=new Intent(this,LayoutPreviewActivity.class);i.putExtras(getIntent());i.putExtra("xml",binding.editor.getText().toString());startActivity(i);}
- @Override public void onResume(){super.onResume();diagnosticsHandler.removeCallbacks(diagnosticsRunnable);diagnosticsHandler.post(diagnosticsRunnable);} @Override public void onPause(){diagnosticsHandler.removeCallbacks(diagnosticsRunnable);super.onPause();} @Override protected void onStop(){super.onStop();if(pref!=null)pref.edit().putInt("act_ts",(int)(binding.editor.getTextSizePx()/getResources().getDisplayMetrics().scaledDensity)).apply();}
+    public static final String FLAG_FROM_ANDROID_MANIFEST = "from_android_manifest";
+    public static final List<Pair<String, Class<? extends EditorColorScheme>>> KNOWN_COLOR_SCHEMES = List.of(
+            new Pair<>("Default", EditorColorScheme.class), new Pair<>("GitHub", SchemeGitHub.class),
+            new Pair<>("Eclipse", SchemeEclipse.class), new Pair<>("Darcula", SchemeDarcula.class),
+            new Pair<>("VS2019", SchemeVS2019.class), new Pair<>("NotepadXX", SchemeNotepadXX.class));
+    public static SharedPreferences pref;
+    public static int languageId;
+
+    private final Handler diagnosticsHandler = new Handler(Looper.getMainLooper());
+    private final Map<String, String> workingContents = new HashMap<>();
+    private CodeEditorHsBinding binding;
+    private boolean fromAndroidManifest;
+    private String scId, activityName, beforeContent = "", currentPath, currentTitle;
+    private String lastAnalyzedSource;
+    private RealtimeDiagnostics.Kind lastAnalyzedKind;
+    private MenuItem diagnosticsMenuItem;
+    private DiagnosticsAdapter diagnosticsAdapter;
+    private final Runnable diagnosticsRunnable = new Runnable() {
+        @Override public void run() {
+            refreshDiagnostics();
+            diagnosticsHandler.postDelayed(this, 280);
+        }
+    };
+
+    public static void loadCESettings(Context c, CodeEditor e, String p) { loadCESettings(c, e, p, false); }
+    public static void loadCESettings(Context c, CodeEditor e, String p, boolean theme) {
+        pref = c.getSharedPreferences("hsce", Activity.MODE_PRIVATE);
+        e.setTextSize(pref.getInt(p + "_ts", 12));
+        e.setWordwrap(pref.getBoolean(p + "_ww", false));
+        e.getProps().symbolPairAutoCompletion = pref.getBoolean(p + "_acsp", true);
+        e.getComponent(EditorAutoCompletion.class).setEnabled(pref.getBoolean(p + "_ac", true));
+        if (theme) selectTheme(e, 0);
+    }
+
+    public static void selectTheme(CodeEditor e, int ignored) {
+        String theme = ThemeUtils.isDarkThemeEnabled(e.getContext())
+                ? CodeEditorColorSchemes.THEME_GITHUB_DARK : CodeEditorColorSchemes.THEME_GITHUB_LIGHT;
+        e.setColorScheme(CodeEditorColorSchemes.loadTextMateColorScheme(theme));
+        EditorUtils.getMaterialStyledScheme(e, true);
+        e.rerunAnalysis();
+    }
+
+    public static void selectLanguage(CodeEditor e, int which) {
+        if (which == 1) {
+            e.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN));
+            languageId = 1;
+        } else if (which == 2) {
+            e.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_XML));
+            languageId = 2;
+        } else {
+            e.setEditorLanguage(new JavaLanguage());
+            languageId = 0;
+        }
+    }
+
+    public static String prettifyXml(String x, int i, Intent e) { return x == null ? null : x.trim(); }
+    public static void a(StringBuilder b, int n) { for (int i = 0; i < n; i++) b.append('\t'); }
+    public static void showSwitchThemeDialog(Activity a, CodeEditor e, DialogInterface.OnClickListener l) {
+        new MaterialAlertDialogBuilder(a).setTitle("Select Theme")
+                .setSingleChoiceItems(new String[]{"Default (Dynamic)", "GitHub Light", "GitHub Dark", "Eclipse", "VS2019", "NotepadXX"}, 0, l)
+                .setNegativeButton(R.string.common_word_cancel, null).show();
+    }
+    public static void showSwitchLanguageDialog(Activity a, CodeEditor e, DialogInterface.OnClickListener l) {
+        new MaterialAlertDialogBuilder(a).setTitle("Select Language")
+                .setSingleChoiceItems(new CharSequence[]{"Java", "Kotlin", "XML"}, languageId, l)
+                .setNegativeButton(R.string.common_word_cancel, null).show();
+    }
+
+    @Override public void onCreate(@Nullable Bundle s) {
+        enableEdgeToEdgeNoContrast();
+        super.onCreate(s);
+        binding = CodeEditorHsBinding.inflate(getLayoutInflater());
+        setContentView(binding.getRoot());
+        pref = getSharedPreferences("hsce", Activity.MODE_PRIVATE);
+        fromAndroidManifest = getIntent().getBooleanExtra(FLAG_FROM_ANDROID_MANIFEST, false);
+        scId = getIntent().getStringExtra("sc_id");
+        activityName = getIntent().getStringExtra("activity_name");
+        currentPath = getIntent().getStringExtra("content");
+        currentTitle = getIntent().getStringExtra("title");
+        binding.editor.setScId(scId);
+        binding.editor.setTypefaceText(EditorUtils.getTypeface(this));
+        binding.editor.setTextSize(16);
+        beforeContent = loadInitialContent();
+        binding.editor.setText(beforeContent);
+        loadLanguageForTitle(currentTitle);
+        setSupportActionBar(binding.toolbar);
+        binding.toolbar.setTitle(currentTitle);
+        binding.toolbar.setNavigationOnClickListener(Helper.getBackPressedClickListener(this));
+        diagnosticsAdapter = new DiagnosticsAdapter(issue -> {
+            binding.diagnosticsPanel.setVisibility(View.GONE);
+            binding.editor.setSelection(Math.max(0, issue.line() - 1), Math.max(0, issue.column() - 1));
+            binding.editor.requestFocus();
+        });
+        binding.diagnosticsPanel.setLayoutManager(new LinearLayoutManager(this));
+        binding.diagnosticsPanel.setAdapter(diagnosticsAdapter);
+        buildFileTabs();
+        loadToolbar();
+        UI.addSystemWindowInsetToPadding(binding.appBarLayout, true, true, true, false);
+        UI.addSystemWindowInsetToMargin(binding.editor, true, false, true, true);
+    }
+
+    private String loadInitialContent() {
+        if (fromAndroidManifest) return readManifestContent();
+        return currentPath == null ? getIntent().getStringExtra("code") : FileUtil.readFile(currentPath);
+    }
+
+    private String readManifestContent() {
+        String p = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + scId + "/Injection/androidmanifest/activities_components.json";
+        if (!FileUtil.isExistFile(p)) return "";
+        ArrayList<HashMap<String, Object>> list = getGson().fromJson(FileUtil.readFile(p), Helper.TYPE_MAP_LIST);
+        for (HashMap<String, Object> item : list) if (String.valueOf(item.get("name")).equals(activityName)) return String.valueOf(item.get("value"));
+        return "";
+    }
+
+    private void buildFileTabs() {
+        binding.fileTabs.removeAllViews();
+        if (fromAndroidManifest || currentPath == null || currentTitle == null
+                || (!currentTitle.endsWith(".java") && !currentTitle.endsWith(".kt"))) {
+            binding.tabScroll.setVisibility(View.GONE);
+            return;
+        }
+        File parent = new File(currentPath).getParentFile();
+        File[] files = parent == null ? null : parent.listFiles(f -> f.isFile()
+                && (f.getName().endsWith(".java") || f.getName().endsWith(".kt")));
+        if (files == null || files.length < 2) {
+            binding.tabScroll.setVisibility(View.GONE);
+            return;
+        }
+        Arrays.sort(files, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+        binding.tabScroll.setVisibility(View.VISIBLE);
+        for (File f : files) {
+            TextView tab = new TextView(this);
+            tab.setText(f.getName());
+            tab.setTextSize(13);
+            tab.setSingleLine(true);
+            tab.setGravity(17);
+            tab.setPadding(28, 0, 28, 0);
+            tab.setMinWidth(120);
+            tab.setOnClickListener(v -> switchTab(f));
+            binding.fileTabs.addView(tab);
+        }
+        updateTabStyles();
+    }
+
+    private void updateTabStyles() {
+        for (int i = 0; i < binding.fileTabs.getChildCount(); i++) {
+            TextView tab = (TextView) binding.fileTabs.getChildAt(i);
+            boolean selected = tab.getText().toString().equals(currentTitle);
+            tab.setBackgroundColor(selected ? 0xFF263238 : 0xFF172024);
+            tab.setTextColor(selected ? 0xFF42A5F5 : 0xFF90A4AE);
+        }
+    }
+
+    private void switchTab(File f) {
+        if (f.getAbsolutePath().equals(currentPath)) return;
+        workingContents.put(currentPath, binding.editor.getText().toString());
+        currentPath = f.getAbsolutePath();
+        currentTitle = f.getName();
+        beforeContent = FileUtil.readFile(currentPath);
+        binding.editor.setText(workingContents.containsKey(currentPath)
+                ? workingContents.get(currentPath) : beforeContent);
+        binding.toolbar.setTitle(currentTitle);
+        loadLanguageForTitle(currentTitle);
+        updateTabStyles();
+        lastAnalyzedSource = null;
+        lastAnalyzedKind = null;
+        refreshDiagnostics();
+    }
+
+    private void loadLanguageForTitle(String title) {
+        if (title == null) return;
+        if (fromAndroidManifest || title.endsWith(".xml")) {
+            EditorUtils.loadXmlConfig(binding.editor, fromAndroidManifest ? "AndroidManifest.xml" : currentPath);
+            languageId = 2;
+        } else if (title.endsWith(".java")) {
+            EditorUtils.loadJavaConfig(binding.editor);
+            languageId = 0;
+        } else if (title.endsWith(".kt")) {
+            binding.editor.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN));
+            selectTheme(binding.editor, 0);
+            languageId = 1;
+        } else selectLanguage(binding.editor, 0);
+    }
+
+    private RealtimeDiagnostics.Kind currentKind() {
+        if (fromAndroidManifest || (currentTitle != null && currentTitle.endsWith(".xml"))) return RealtimeDiagnostics.Kind.XML;
+        if (currentTitle != null && currentTitle.endsWith(".kt")) return RealtimeDiagnostics.Kind.KOTLIN;
+        return RealtimeDiagnostics.Kind.JAVA;
+    }
+
+    private void refreshDiagnostics() {
+        if (binding == null || diagnosticsAdapter == null) return;
+        RealtimeDiagnostics.Kind kind = currentKind();
+        String source = binding.editor.getText().toString();
+        if (source.equals(lastAnalyzedSource) && kind == lastAnalyzedKind) return;
+        lastAnalyzedSource = source;
+        lastAnalyzedKind = kind;
+        List<RealtimeDiagnostics.Issue> issues = RealtimeDiagnostics.check(kind, source);
+        binding.editor.setDiagnostics(issues);
+        diagnosticsAdapter.submitList(new ArrayList<>(issues));
+        if (diagnosticsMenuItem != null) diagnosticsMenuItem.setTitle("Errors (" + issues.size() + ")");
+    }
+
+    private void loadToolbar() {
+        Menu menu = binding.toolbar.getMenu();
+        menu.clear();
+        binding.toolbar.inflateMenu(R.menu.menu_code_editor_hs);
+        diagnosticsMenuItem = menu.findItem(R.id.action_diagnostics);
+        menu.findItem(R.id.action_word_wrap).setChecked(pref.getBoolean("act_ww", false));
+        menu.findItem(R.id.action_autocomplete).setChecked(pref.getBoolean("act_ac", true));
+        menu.findItem(R.id.action_autocomplete_symbol_pair).setChecked(pref.getBoolean("act_acsp", true));
+        menu.findItem(R.id.action_layout_preview).setVisible(isFileInLayoutFolder());
+
+        binding.toolbar.setOnMenuItemClickListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.action_undo) binding.editor.undo();
+            else if (id == R.id.action_redo) binding.editor.redo();
+            else if (id == R.id.action_save) save();
+            else if (id == R.id.action_diagnostics) {
+                binding.diagnosticsPanel.setVisibility(binding.diagnosticsPanel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            } else if (id == R.id.action_word_wrap) {
+                item.setChecked(!item.isChecked());
+                binding.editor.setWordwrap(item.isChecked());
+                pref.edit().putBoolean("act_ww", item.isChecked()).apply();
+            } else if (id == R.id.action_autocomplete) {
+                item.setChecked(!item.isChecked());
+                binding.editor.getComponent(EditorAutoCompletion.class).setEnabled(item.isChecked());
+                pref.edit().putBoolean("act_ac", item.isChecked()).apply();
+            } else if (id == R.id.action_autocomplete_symbol_pair) {
+                item.setChecked(!item.isChecked());
+                binding.editor.getProps().symbolPairAutoCompletion = item.isChecked();
+                pref.edit().putBoolean("act_acsp", item.isChecked()).apply();
+            } else if (id == R.id.action_select_language) {
+                showSwitchLanguageDialog(this, binding.editor, (dialog, which) -> {
+                    selectLanguage(binding.editor, which);
+                    dialog.dismiss();
+                    lastAnalyzedSource = null;
+                    lastAnalyzedKind = null;
+                    refreshDiagnostics();
+                });
+            } else if (id == R.id.action_select_theme) {
+                showSwitchThemeDialog(this, binding.editor, (dialog, which) -> {
+                    selectTheme(binding.editor, which);
+                    dialog.dismiss();
+                });
+            } else if (id == R.id.action_layout_preview) toLayoutPreview();
+            return true;
+        });
+        refreshDiagnostics();
+    }
+
+    private void save() {
+        String text = binding.editor.getText().toString();
+        if (fromAndroidManifest) {
+            saveManifest(text);
+            beforeContent = text;
+            SketchwareUtil.toast("Saved");
+            return;
+        }
+        if (currentPath == null) {
+            SketchwareUtil.toastError("File path is missing");
+            return;
+        }
+        FileUtil.writeFile(currentPath, text);
+        workingContents.remove(currentPath);
+        beforeContent = text;
+        if (currentTitle != null && currentTitle.endsWith(".xml")) XmlSyncHelper.syncXml(this, scId, currentTitle, text);
+        SketchwareUtil.toast("Saved");
+        refreshDiagnostics();
+    }
+
+    private void saveManifest(String text) {
+        String p = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + scId + "/Injection/androidmanifest/activities_components.json";
+        ArrayList<HashMap<String, Object>> list = FileUtil.isExistFile(p)
+                ? getGson().fromJson(FileUtil.readFile(p), Helper.TYPE_MAP_LIST) : new ArrayList<>();
+        boolean found = false;
+        for (HashMap<String, Object> item : list) if (String.valueOf(item.get("name")).equals(activityName)) {
+            item.put("value", text);
+            found = true;
+        }
+        if (!found) {
+            HashMap<String, Object> item = new HashMap<>();
+            item.put("name", activityName);
+            item.put("value", text);
+            list.add(item);
+        }
+        FileUtil.writeFile(p, getGson().toJson(list));
+    }
+
+    private boolean isFileInLayoutFolder() {
+        return currentPath != null && currentPath.contains("/resource/layout/") && currentPath.endsWith(".xml");
+    }
+
+    private void toLayoutPreview() {
+        Intent intent = new Intent(this, LayoutPreviewActivity.class);
+        intent.putExtras(getIntent());
+        intent.putExtra("xml", binding.editor.getText().toString());
+        startActivity(intent);
+    }
+
+    @Override public void onResume() {
+        super.onResume();
+        diagnosticsHandler.removeCallbacks(diagnosticsRunnable);
+        diagnosticsHandler.post(diagnosticsRunnable);
+    }
+
+    @Override public void onPause() {
+        diagnosticsHandler.removeCallbacks(diagnosticsRunnable);
+        super.onPause();
+    }
+
+    @Override protected void onStop() {
+        super.onStop();
+        if (pref != null) pref.edit().putInt("act_ts", (int) (binding.editor.getTextSizePx() / getResources().getDisplayMetrics().scaledDensity)).apply();
+    }
 }
