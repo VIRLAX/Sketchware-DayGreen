@@ -8,7 +8,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -18,25 +17,26 @@ import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
+import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
+import com.besome.sketch.beans.ViewBean;
+import com.besome.sketch.editor.view.ItemView;
+import com.besome.sketch.editor.view.ViewPane;
 import com.google.android.material.card.MaterialCardView;
 
-import org.xmlpull.v1.XmlPullParser;
-import org.xmlpull.v1.XmlPullParserFactory;
-
-import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import a.a.a.jC;
 import pro.sketchware.R;
+import pro.sketchware.tools.ViewBeanParser;
 
 public class FloatingPreviewService extends Service {
     public static final String ACTION_SHOW = "pro.sketchware.action.SHOW_FLOATING_PREVIEW";
@@ -63,9 +63,7 @@ public class FloatingPreviewService extends Service {
     private int screenWidth;
     private int screenHeight;
 
-    public static boolean isRunning() {
-        return running;
-    }
+    public static boolean isRunning() { return running; }
 
     public static void showOrUpdate(Context context, String xml, String title, String scId) {
         Intent intent = new Intent(context, FloatingPreviewService.class)
@@ -78,7 +76,7 @@ public class FloatingPreviewService extends Service {
     }
 
     public static void stop(Context context) {
-        context.startService(new Intent(context, FloatingPreviewService.class).setAction(ACTION_STOP));
+        context.stopService(new Intent(context, FloatingPreviewService.class));
     }
 
     public static void updatePreview(Context context, String xml, String title, String scId) {
@@ -120,7 +118,7 @@ public class FloatingPreviewService extends Service {
         iconParams.x = dp(16);
         iconParams.y = dp(120);
         floatingIcon.setOnClickListener(v -> showPreview());
-        floatingIcon.setOnTouchListener(new DragTouch(iconParams, false));
+        floatingIcon.setOnTouchListener(new DragTouch(iconParams));
         windowManager.addView(floatingIcon, iconParams);
     }
 
@@ -137,7 +135,6 @@ public class FloatingPreviewService extends Service {
         View header = previewWindow.findViewById(R.id.preview_header);
         View close = previewWindow.findViewById(R.id.preview_close);
         View resize = previewWindow.findViewById(R.id.preview_resize);
-        FrameLayout content = previewWindow.findViewById(R.id.preview_content);
         header.setOnTouchListener(new PreviewDragTouch());
         close.setOnClickListener(v -> minimize());
         resize.setOnTouchListener(new ResizeTouch());
@@ -148,11 +145,12 @@ public class FloatingPreviewService extends Service {
         previewParams.x = getPrefs().getInt("x", Math.max(dp(8), (screenWidth - width) / 2));
         previewParams.y = getPrefs().getInt("y", dp(96));
         windowManager.addView(previewWindow, previewParams);
-        renderInto(content, latestXml);
+        requestRender(latestXml);
     }
 
     private void minimize() {
         if (previewWindow != null) {
+            saveBounds();
             windowManager.removeView(previewWindow);
             previewWindow = null;
         }
@@ -168,71 +166,61 @@ public class FloatingPreviewService extends Service {
     }
 
     private void requestRender(String xml) {
-        if (xml == null) return;
+        if (xml == null || latestScId == null || latestTitle == null) return;
+        final String requestedXml = xml;
+        final String requestedTitle = latestTitle;
+        final String requestedScId = latestScId;
         renderExecutor.execute(() -> {
-            boolean valid = isWellFormed(xml);
-            mainHandler.post(() -> {
-                if (previewWindow == null) return;
-                FrameLayout content = previewWindow.findViewById(R.id.preview_content);
-                if (!valid) {
-                    content.removeAllViews();
-                    TextView error = new TextView(this);
-                    error.setText("XML belum valid\nPerbaiki error di editor untuk melihat preview.");
-                    error.setTextColor(Color.WHITE);
-                    error.setPadding(dp(16), dp(16), dp(16), dp(16));
-                    content.addView(error, new FrameLayout.LayoutParams(-1, -1));
-                    return;
-                }
-                renderInto(content, xml);
-            });
+            try {
+                ArrayList<ViewBean> beans = new ViewBeanParser(requestedXml).parse();
+                mainHandler.post(() -> renderBeans(beans, requestedTitle, requestedScId));
+            } catch (Exception e) {
+                mainHandler.post(() -> showRenderError(e.getMessage()));
+            }
         });
     }
 
-    private boolean isWellFormed(String xml) {
+    private void renderBeans(ArrayList<ViewBean> beans, String title, String scId) {
+        if (previewWindow == null) return;
         try {
-            XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-            XmlPullParser parser = factory.newPullParser();
-            parser.setInput(new StringReader(xml));
-            int depth = 0;
-            int event;
-            while ((event = parser.next()) != XmlPullParser.END_DOCUMENT) {
-                if (event == XmlPullParser.START_TAG) depth++;
-                else if (event == XmlPullParser.END_TAG) depth--;
-                if (depth < 0) return false;
+            ViewPane pane = new ViewPane(this);
+            pane.initialize(scId, true);
+            pane.setResourceManager(jC.d(scId));
+            pane.updateRootLayout(scId, title);
+            for (ViewBean bean : beans) {
+                if (beans.indexOf(bean) == 0) {
+                    bean.parent = "root";
+                    bean.parentType = 0;
+                    bean.preParent = null;
+                    bean.preParentType = -1;
+                }
+                ItemView item = pane.createItemView(bean);
+                pane.addViewAndUpdateIndex(item);
             }
-            return depth == 0;
-        } catch (Exception ignored) {
-            return false;
+            FrameLayout content = previewWindow.findViewById(R.id.preview_content);
+            content.removeAllViews();
+            content.addView(pane, new FrameLayout.LayoutParams(-1, -1));
+        } catch (Exception e) {
+            showRenderError(e.getMessage());
         }
     }
 
-    private void renderInto(FrameLayout container, String xml) {
-        if (xml == null || xml.trim().isEmpty()) return;
-        try {
-            XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-            XmlPullParser parser = factory.newPullParser();
-            parser.setInput(new StringReader(xml));
-            View rendered = LayoutInflater.from(this).inflate(parser, container, false);
-            container.removeAllViews();
-            container.addView(rendered, new FrameLayout.LayoutParams(-1, -1));
-        } catch (Exception e) {
-            container.removeAllViews();
-            TextView error = new TextView(this);
-            error.setText("Preview gagal dirender\n" + e.getMessage());
-            error.setTextColor(Color.WHITE);
-            error.setPadding(dp(16), dp(16), dp(16), dp(16));
-            container.addView(error, new FrameLayout.LayoutParams(-1, -1));
-        }
+    private void showRenderError(String message) {
+        if (previewWindow == null) return;
+        FrameLayout content = previewWindow.findViewById(R.id.preview_content);
+        content.removeAllViews();
+        TextView error = new TextView(this);
+        error.setText("Preview belum bisa dirender\n" + (message == null ? "Periksa XML dan resource layout." : message));
+        error.setTextColor(Color.WHITE);
+        error.setPadding(dp(16), dp(16), dp(16), dp(16));
+        content.addView(error, new FrameLayout.LayoutParams(-1, -1));
     }
 
     private WindowManager.LayoutParams baseParams(int width, int height) {
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                : WindowManager.LayoutParams.TYPE_PHONE;
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                width, height, type,
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                PixelFormat.TRANSLUCENT);
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height, type,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
         return params;
     }
@@ -244,18 +232,15 @@ public class FloatingPreviewService extends Service {
             if (previewParams == null || previewWindow == null) return false;
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 downX = event.getRawX(); downY = event.getRawY();
-                startX = previewParams.x; startY = previewParams.y;
-                return true;
+                startX = previewParams.x; startY = previewParams.y; return true;
             }
             if (event.getAction() == MotionEvent.ACTION_MOVE) {
                 previewParams.x = startX + (int) (event.getRawX() - downX);
                 previewParams.y = startY + (int) (event.getRawY() - downY);
-                windowManager.updateViewLayout(previewWindow, previewParams);
-                return true;
+                windowManager.updateViewLayout(previewWindow, previewParams); return true;
             }
             if (event.getAction() == MotionEvent.ACTION_UP) {
-                float dx = event.getRawX() - downX;
-                if (dx > dp(96)) minimize(); else snapToCenter();
+                if (event.getRawX() - downX > dp(96)) minimize(); else snapToCenter();
                 return true;
             }
             return true;
@@ -269,14 +254,12 @@ public class FloatingPreviewService extends Service {
             if (previewParams == null || previewWindow == null) return false;
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 downX = event.getRawX(); downY = event.getRawY();
-                startWidth = previewParams.width; startHeight = previewParams.height;
-                return true;
+                startWidth = previewParams.width; startHeight = previewParams.height; return true;
             }
             if (event.getAction() == MotionEvent.ACTION_MOVE) {
                 previewParams.width = Math.max(MIN_WIDTH, startWidth + (int) (event.getRawX() - downX));
                 previewParams.height = Math.max(MIN_HEIGHT, startHeight + (int) (event.getRawY() - downY));
-                windowManager.updateViewLayout(previewWindow, previewParams);
-                return true;
+                windowManager.updateViewLayout(previewWindow, previewParams); return true;
             }
             if (event.getAction() == MotionEvent.ACTION_UP) { saveBounds(); return true; }
             return true;
@@ -285,17 +268,26 @@ public class FloatingPreviewService extends Service {
 
     private class DragTouch implements View.OnTouchListener {
         private final WindowManager.LayoutParams params;
-        private final boolean preview;
+        private final int touchSlop = ViewConfiguration.get(FloatingPreviewService.this).getScaledTouchSlop();
         private float downX, downY;
         private int startX, startY;
-        DragTouch(WindowManager.LayoutParams params, boolean preview) { this.params = params; this.preview = preview; }
+        private boolean moved;
+        DragTouch(WindowManager.LayoutParams params) { this.params = params; }
         @Override public boolean onTouch(View v, MotionEvent event) {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                downX = event.getRawX(); downY = event.getRawY(); startX = params.x; startY = params.y; return true;
+                downX = event.getRawX(); downY = event.getRawY();
+                startX = params.x; startY = params.y; moved = false; return true;
             }
             if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                params.x = startX + (int) (event.getRawX() - downX); params.y = startY + (int) (event.getRawY() - downY);
+                float dx = event.getRawX() - downX;
+                float dy = event.getRawY() - downY;
+                if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) moved = true;
+                params.x = startX + (int) dx; params.y = startY + (int) dy;
                 if (floatingIcon != null) windowManager.updateViewLayout(floatingIcon, params);
+                return true;
+            }
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                if (!moved) v.performClick();
                 return true;
             }
             return true;
@@ -303,7 +295,11 @@ public class FloatingPreviewService extends Service {
     }
 
     private android.content.SharedPreferences getPrefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
-    private void saveBounds() { if (previewParams != null) getPrefs().edit().putInt("width", previewParams.width).putInt("height", previewParams.height).putInt("x", previewParams.x).putInt("y", previewParams.y).apply(); }
+    private void saveBounds() {
+        if (previewParams != null) getPrefs().edit().putInt("width", previewParams.width)
+                .putInt("height", previewParams.height).putInt("x", previewParams.x)
+                .putInt("y", previewParams.y).apply();
+    }
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + .5f); }
 
     private void createNotificationChannel() {
