@@ -26,7 +26,6 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 import com.besome.sketch.beans.ViewBean;
-import com.besome.sketch.editor.view.ItemView;
 import com.besome.sketch.editor.view.ViewPane;
 import com.google.android.material.card.MaterialCardView;
 
@@ -194,7 +193,7 @@ public class FloatingPreviewService extends Service {
                     bean.preParent = null;
                     bean.preParentType = -1;
                 }
-                ItemView item = pane.createItemView(bean);
+                View item = pane.createItemView(bean);
                 pane.addViewAndUpdateIndex(item);
             }
             FrameLayout content = previewWindow.findViewById(R.id.preview_content);
