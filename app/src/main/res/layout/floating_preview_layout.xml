@@ -3,10 +3,10 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    app:cardBackgroundColor="?attr/colorSurface"
-    app:cardCornerRadius="18dp"
-    app:cardElevation="10dp"
-    app:strokeColor="?attr/colorOutlineVariant"
+    app:cardBackgroundColor="#13201F"
+    app:cardCornerRadius="22dp"
+    app:cardElevation="14dp"
+    app:strokeColor="#3B615E"
     app:strokeWidth="1dp">
 
     <LinearLayout
@@ -17,53 +17,106 @@
         <LinearLayout
             android:id="@+id/preview_header"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="?attr/colorSurfaceContainer"
+            android:layout_height="54dp"
+            android:background="#1A2D2A"
             android:gravity="center_vertical"
             android:paddingStart="14dp"
             android:paddingEnd="8dp">
 
             <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:contentDescription="@null"
                 android:src="@drawable/ic_floating_preview" />
 
-            <TextView
-                android:id="@+id/preview_title"
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp"
                 android:layout_weight="1"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="Layout Preview"
-                android:textAppearance="?attr/textAppearanceTitleSmall"
-                android:textColor="?attr/colorOnSurface" />
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/preview_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="Layout Preview"
+                    android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:textColor="#E7F3EF" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Live XML rendering"
+                    android:textAppearance="?attr/textAppearanceLabelSmall"
+                    android:textColor="#93B6AC" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/preview_live"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_preview_live"
+                android:gravity="center"
+                android:paddingStart="9dp"
+                android:paddingEnd="9dp"
+                android:text="LIVE"
+                android:textColor="#B9F0D7"
+                android:textSize="10sp"
+                android:textStyle="bold" />
 
             <ImageButton
                 android:id="@+id/preview_close"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Minimize preview"
                 android:src="@drawable/ic_floating_close" />
         </LinearLayout>
 
-        <FrameLayout
-            android:id="@+id/preview_content"
+        <ScrollView
+            android:id="@+id/preview_scroll"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:background="?attr/colorSurface" />
+            android:background="#0D1515"
+            android:fillViewport="true"
+            android:overScrollMode="ifContentScrolls">
 
-        <ImageView
-            android:id="@+id/preview_resize"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_gravity="end"
-            android:contentDescription="Resize preview"
-            android:padding="8dp"
-            android:src="@drawable/ic_floating_resize" />
+            <FrameLayout
+                android:id="@+id/preview_content"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:padding="10dp" />
+        </ScrollView>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="34dp"
+            android:background="#1A2D2A"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="8dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Swipe left to minimize"
+                android:textColor="#7FA49A"
+                android:textSize="10sp" />
+
+            <ImageView
+                android:id="@+id/preview_resize"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:contentDescription="Resize preview"
+                android:padding="6dp"
+                android:src="@drawable/ic_floating_resize" />
+        </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
