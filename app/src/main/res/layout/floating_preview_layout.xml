@@ -47,7 +47,7 @@
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Minimize preview"
-                android:src="@drawable/ic_floating_preview" />
+                android:src="@drawable/ic_floating_close" />
         </LinearLayout>
 
         <FrameLayout
@@ -64,6 +64,6 @@
             android:layout_gravity="end"
             android:contentDescription="Resize preview"
             android:padding="8dp"
-            android:src="@drawable/ic_floating_preview" />
+            android:src="@drawable/ic_floating_resize" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
