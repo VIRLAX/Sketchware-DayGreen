@@ -5,50 +5,65 @@
     android:layout_height="match_parent"
     android:background="?attr/colorSurface"
     android:orientation="vertical">
+
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/app_bar_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurfaceContainer">
+        android:background="?attr/colorSurfaceContainer"
+        app:liftOnScroll="true">
+
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:menu="@menu/menu_code_editor_hs"
             tools:title="MainActivity.java" />
+
         <com.google.android.material.divider.MaterialDivider
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:dividerColor="?attr/colorSurfaceContainerHighest" />
+
         <HorizontalScrollView
             android:id="@+id/tab_scroll"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="52dp"
             android:background="?attr/colorSurfaceContainer"
+            android:clipToPadding="false"
             android:fillViewport="false"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
             android:scrollbars="none">
+
             <LinearLayout
                 android:id="@+id/file_tabs"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
+                android:gravity="center_vertical"
                 android:orientation="horizontal" />
         </HorizontalScrollView>
     </com.google.android.material.appbar.AppBarLayout>
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
+
         <pro.sketchware.editor.SketchwareCodeEditor
             android:id="@+id/editor"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/diagnostics_panel"
             android:layout_width="match_parent"
-            android:layout_height="220dp"
+            android:layout_height="wrap_content"
             android:layout_gravity="bottom"
             android:background="?attr/colorSurface"
             android:elevation="8dp"
+            android:maxHeight="260dp"
+            android:overScrollMode="ifContentScrolls"
             android:paddingTop="4dp"
             android:visibility="gone"
             app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
