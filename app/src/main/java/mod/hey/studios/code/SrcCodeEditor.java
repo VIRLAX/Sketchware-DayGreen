@@ -7,9 +7,12 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.Pair;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -29,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.github.rosemoe.sora.event.ContentChangeEvent;
 import io.github.rosemoe.sora.langs.java.JavaLanguage;
 import io.github.rosemoe.sora.widget.CodeEditor;
 import io.github.rosemoe.sora.widget.component.EditorAutoCompletion;
@@ -45,6 +49,7 @@ import mod.jbk.code.CodeEditorLanguages;
 import pro.sketchware.R;
 import pro.sketchware.activities.preview.LayoutPreviewActivity;
 import pro.sketchware.databinding.CodeEditorHsBinding;
+import pro.sketchware.editor.FloatingPreviewService;
 import pro.sketchware.editor.diagnostics.DiagnosticsAdapter;
 import pro.sketchware.utility.EditorUtils;
 import pro.sketchware.utility.FileUtil;
@@ -157,6 +162,11 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
         loadLanguageForTitle(currentTitle);
         binding.toolbar.setTitle(currentTitle);
         binding.toolbar.setNavigationOnClickListener(v -> onBackPressed());
+        binding.editor.subscribeAlways(ContentChangeEvent.class, event -> {
+            lastAnalyzedSource = null;
+            refreshDiagnostics();
+            updateFloatingPreview();
+        });
 
         diagnosticsAdapter = new DiagnosticsAdapter(issue -> {
             binding.diagnosticsPanel.setVisibility(View.GONE);
@@ -169,6 +179,16 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
         loadToolbar();
         UI.addSystemWindowInsetToPadding(binding.appBarLayout, true, true, true, false);
         UI.addSystemWindowInsetToMargin(binding.editor, true, false, true, true);
+    }
+
+    private void updateFloatingPreview() {
+        if (!isXmlFile() || !FloatingPreviewService.isRunning()) return;
+        FloatingPreviewService.updatePreview(this, binding.editor.getText().toString(), currentTitle, scId);
+    }
+
+    private boolean isXmlFile() {
+        return !fromAndroidManifest && currentTitle != null && currentTitle.endsWith(".xml")
+                && currentPath != null && currentPath.contains("/resource/layout/");
     }
 
     private String loadInitialContent() {
@@ -287,7 +307,11 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
         diagnosticsMenuItem.setIcon(R.drawable.ic_mtrl_bug_report)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
 
-        if (isFileInLayoutFolder()) toolbarMenu.add(Menu.NONE, ACTION_LAYOUT_PREVIEW, Menu.NONE, "Layout Preview");
+        if (isFileInLayoutFolder()) {
+            toolbarMenu.add(Menu.NONE, ACTION_LAYOUT_PREVIEW, Menu.NONE, "Layout Preview")
+                    .setIcon(R.drawable.ic_floating_preview)
+                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        }
         toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Find & Replace");
         toolbarMenu.add(Menu.NONE, ACTION_WORD_WRAP, Menu.NONE, "Word wrap")
                 .setCheckable(true).setChecked(pref.getBoolean("act_ww", false));
@@ -307,6 +331,8 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
             else if (id == ACTION_DIAGNOSTICS) {
                 binding.diagnosticsPanel.setVisibility(binding.diagnosticsPanel.getVisibility() == View.VISIBLE
                         ? View.GONE : View.VISIBLE);
+            } else if (id == ACTION_LAYOUT_PREVIEW) {
+                toggleFloatingPreview();
             } else if (id == ACTION_WORD_WRAP) {
                 item.setChecked(!item.isChecked());
                 binding.editor.setWordwrap(item.isChecked());
@@ -332,10 +358,28 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
                     selectTheme(binding.editor, which);
                     dialog.dismiss();
                 });
-            } else if (id == ACTION_LAYOUT_PREVIEW) toLayoutPreview();
+            }
             return true;
         });
         refreshDiagnostics();
+    }
+
+    private void toggleFloatingPreview() {
+        if (!isXmlFile()) {
+            SketchwareUtil.toast("Floating Preview hanya tersedia untuk XML layout");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            SketchwareUtil.toast("Aktifkan izin tampil di atas aplikasi untuk memakai preview");
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())));
+            return;
+        }
+        if (FloatingPreviewService.isRunning()) {
+            FloatingPreviewService.stop(this);
+        } else {
+            FloatingPreviewService.showOrUpdate(this, binding.editor.getText().toString(), currentTitle, scId);
+        }
     }
 
     private void save() {
@@ -378,6 +422,11 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
 
     private boolean isFileInLayoutFolder() {
         return currentPath != null && currentPath.contains("/resource/layout/") && currentPath.endsWith(".xml");
+    }
+
+    private boolean isXmlFile() {
+        return !fromAndroidManifest && currentTitle != null && currentTitle.endsWith(".xml")
+                && currentPath != null && currentPath.contains("/resource/layout/");
     }
 
     private void toLayoutPreview() {
