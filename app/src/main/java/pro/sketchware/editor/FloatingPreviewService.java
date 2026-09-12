@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
+import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -109,9 +110,14 @@ public class FloatingPreviewService extends Service {
         return START_STICKY;
     }
 
+    private Context themedContext() {
+        return new ContextThemeWrapper(this, R.style.Theme_SketchwarePro);
+    }
+
     private void showIcon() {
         if (floatingIcon != null || !Settings.canDrawOverlays(this)) return;
-        floatingIcon = LayoutInflater.from(this).inflate(R.layout.floating_icon_layout, null);
+        Context context = themedContext();
+        floatingIcon = LayoutInflater.from(context).inflate(R.layout.floating_icon_layout, null);
         iconParams = baseParams(dp(64), dp(64));
         iconParams.gravity = Gravity.TOP | Gravity.END;
         iconParams.x = dp(16);
@@ -127,7 +133,8 @@ public class FloatingPreviewService extends Service {
             windowManager.removeView(floatingIcon);
             floatingIcon = null;
         }
-        previewWindow = (MaterialCardView) LayoutInflater.from(this)
+        Context context = themedContext();
+        previewWindow = (MaterialCardView) LayoutInflater.from(context)
                 .inflate(R.layout.floating_preview_layout, null);
         TextView title = previewWindow.findViewById(R.id.preview_title);
         title.setText(latestTitle == null ? "Layout Preview" : latestTitle);
