@@ -3,17 +3,17 @@
     <item
         android:id="@+id/program_info"
         android:icon="@drawable/ic_sketchware_24"
-        android:title="Daygreen information" />
+        android:title="@string/drawer_daygreen_information" />
 
     <item
         android:id="@+id/daydream_cleanup"
         android:icon="@drawable/cleaning_services_24px"
-        android:title="Clean up" />
+        android:title="@string/drawer_cleanup" />
 
     <item
         android:id="@+id/app_settings"
         android:icon="@drawable/ic_mtrl_settings"
-        android:title="Settings" />
+        android:title="@string/common_word_settings" />
 
     <item
         android:id="@+id/daydream_settings"
@@ -23,14 +23,14 @@
     <item
         android:id="@+id/create_release_keystore"
         android:icon="@drawable/ic_mtrl_key"
-        android:title="Create keystore" />    
+        android:title="@string/drawer_create_keystore" />    
 
     <item
         android:id="@+id/change_language"
         android:icon="@drawable/ic_language_24"
         android:title="@string/menu_change_language" />
 
-    <item android:title="Related links"
+    <item android:title="@string/drawer_related_links"
         android:visible="true">
         <menu>
             <item
