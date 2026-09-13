@@ -5,7 +5,6 @@
     <string name="dialog_language_title">Choose Language</string>
     <string name="dialog_language_message">Select a language for the app</string>
     <string name="language_restart_message">Language changed successfully</string>
-    <string name="title_telegram_community">Telegram</string>
     <string name="language_english">English</string>
     <string name="language_indonesia">Indonesia</string>
     <string name="language_japanese">日本語</string>
