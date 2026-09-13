@@ -112,7 +112,11 @@ class MainDrawer @JvmOverloads constructor(context: Context, attrs: AttributeSet
     }
 
     private fun showLanguageDialog(activity: Activity) {
-        val languages = arrayOf("English", "Indonesia", "\u65E5\u672C\u8A9E")
+        val languages = arrayOf(
+            activity.getString(R.string.language_english),
+            activity.getString(R.string.language_indonesia),
+            activity.getString(R.string.language_japanese)
+        )
         val languageCodes = arrayOf("en", "in", "ja")
 
         val currentLang = LocaleHelper.getLanguage(activity)

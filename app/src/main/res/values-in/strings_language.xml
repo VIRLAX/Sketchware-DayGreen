@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Language feature strings (Bahasa Indonesia) -->
+<resources>
+    <string name="menu_change_language">Ganti Bahasa</string>
+    <string name="dialog_language_title">Pilih Bahasa</string>
+    <string name="dialog_language_message">Pilih bahasa untuk aplikasi</string>
+    <string name="language_restart_message">Bahasa berhasil diubah</string>
+    <string name="title_telegram_community">Telegram</string>
+    <string name="language_english">Inggris</string>
+    <string name="language_indonesia">Indonesia</string>
+    <string name="language_japanese">Jepang</string>
+</resources>

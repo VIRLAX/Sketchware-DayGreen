@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Language feature strings (日本語) -->
+<resources>
+    <string name="menu_change_language">言語を変更</string>
+    <string name="dialog_language_title">言語を選択</string>
+    <string name="dialog_language_message">アプリの言語を選択してください</string>
+    <string name="language_restart_message">言語が正常に変更されました</string>
+    <string name="title_telegram_community">Telegram</string>
+    <string name="language_english">英語</string>
+    <string name="language_indonesia">インドネシア語</string>
+    <string name="language_japanese">日本語</string>
+</resources>
