@@ -1542,7 +1542,7 @@ Apakah Anda ingin melanjutkan?</string>
     <string name="link_about_team">https://sketchware-pro.github.io/Sketchware-Pro/about.json</string>
     <string name="link_discord_invite">https://discord.gg/ukRxYdXVF</string>
     <string name="link_docs_url">https://docs.sketchware.pro</string>
-    <string name="link_github_commits_url">https://api.github.com/repos/Sketchware-Pro/Sketchware-Pro/commits?per_page=%s&amp;page=%s</string>
+    <string formatted="false" name="link_github_commits_url">https://api.github.com/repos/Sketchware-Pro/Sketchware-Pro/commits?per_page=%s&amp;page=%s</string>
     <string name="link_github_release">https://github.com/fora2323/Sketchware-DayGreen/releases</string>
     <string name="link_github_url">https://github.com/fora2323/Sketchware-DayGreen.git</string>
     <string name="link_ideas_url">https://discord.gg/4uxhMwCt</string>
