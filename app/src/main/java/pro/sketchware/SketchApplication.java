@@ -11,6 +11,7 @@ import androidx.annotation.NonNull;
 import com.besome.sketch.tools.CollectErrorActivity;
 
 import extensions.anbui.daydream.setup.DRSetup;
+import pro.sketchware.utility.LocaleHelper;
 import pro.sketchware.utility.theme.ThemeManager;
 
 public class SketchApplication extends Application {
@@ -18,6 +19,11 @@ public class SketchApplication extends Application {
 
     public static Context getContext() {
         return mApplicationContext;
+    }
+
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(LocaleHelper.applyLocale(base));
     }
 
     @Override

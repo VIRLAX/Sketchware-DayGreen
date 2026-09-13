@@ -25,6 +25,11 @@
         android:icon="@drawable/ic_mtrl_key"
         android:title="Create keystore" />    
 
+    <item
+        android:id="@+id/change_language"
+        android:icon="@drawable/ic_language_24"
+        android:title="@string/menu_change_language" />
+
     <item android:title="Related links"
         android:visible="true">
         <menu>

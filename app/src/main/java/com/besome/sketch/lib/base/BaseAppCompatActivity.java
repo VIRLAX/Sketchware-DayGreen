@@ -31,6 +31,7 @@ import a.a.a.MA;
 import a.a.a.lC;
 import dev.chrisbanes.insetter.Insetter;
 import pro.sketchware.dialogs.ProgressDialog;
+import pro.sketchware.utility.LocaleHelper;
 
 public abstract class BaseAppCompatActivity extends AppCompatActivity {
 
@@ -51,6 +52,11 @@ public abstract class BaseAppCompatActivity extends AppCompatActivity {
             recreate();
         }
     };
+
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(LocaleHelper.applyLocale(newBase));
+    }
 
     public void a(MA var1) {
         taskList.add(var1);

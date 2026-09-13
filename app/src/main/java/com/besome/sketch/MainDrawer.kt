@@ -18,6 +18,7 @@ import androidx.drawerlayout.widget.DrawerLayout
 
 import com.besome.sketch.help.ProgramInfoActivity
 import com.besome.sketch.tools.NewKeyStoreActivity
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.theme.overlay.MaterialThemeOverlay
 
@@ -31,6 +32,7 @@ import mod.hilal.saif.activities.tools.AppSettings
 
 import pro.sketchware.R
 import pro.sketchware.activities.about.AboutActivity
+import pro.sketchware.utility.LocaleHelper
 import pro.sketchware.utility.UI
 
 class MainDrawer @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = R.attr.navigationViewStyle) : NavigationView(MaterialThemeOverlay.wrap(context, attrs, defStyleAttr, DEF_STYLE_RES), attrs, defStyleAttr) {
@@ -103,7 +105,34 @@ class MainDrawer @JvmOverloads constructor(context: Context, attrs: AttributeSet
                 }
                 activity.startActivity(intent)
             }
+            R.id.change_language -> {
+                showLanguageDialog(activity)
+            }
         }
+    }
+
+    private fun showLanguageDialog(activity: Activity) {
+        val languages = arrayOf("English", "Indonesia", "\u65E5\u672C\u8A9E")
+        val languageCodes = arrayOf("en", "in", "ja")
+
+        val currentLang = LocaleHelper.getLanguage(activity)
+        var selectedIndex = languageCodes.indexOf(currentLang)
+        if (selectedIndex == -1) selectedIndex = 0
+
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(activity.getString(R.string.dialog_language_title))
+            .setSingleChoiceItems(languages, selectedIndex) { dialog, which ->
+                val chosenCode = languageCodes[which]
+                if (chosenCode != currentLang) {
+                    LocaleHelper.setLocale(activity, chosenCode)
+                    dialog.dismiss()
+                    activity.recreate()
+                } else {
+                    dialog.dismiss()
+                }
+            }
+            .setNegativeButton(activity.getString(R.string.common_word_cancel), null)
+            .show()
     }
 
     private fun openUrl(url: String) {
