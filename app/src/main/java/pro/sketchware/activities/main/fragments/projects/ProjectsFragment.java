@@ -285,7 +285,7 @@ public class ProjectsFragment extends DA {
 
     private void showProjectSortingDialog() {
         MaterialAlertDialogBuilder dialog = new MaterialAlertDialogBuilder(requireActivity());
-        dialog.setTitle("Sort options");
+        dialog.setTitle(getString(R.string.projects_sort_options));
 
         SortProjectDialogBinding dialogBinding = SortProjectDialogBinding.inflate(LayoutInflater.from(requireActivity()));
         RadioButton sortByName = dialogBinding.sortByName;
@@ -306,7 +306,7 @@ public class ProjectsFragment extends DA {
         }
 
         dialog.setView(dialogBinding.getRoot());
-        dialog.setPositiveButton("Save", (v, which) -> {
+        dialog.setPositiveButton(R.string.projects_save, (v, which) -> {
             int sortValue = 0;
             if (sortByName.isChecked()) {
                 sortValue |= ProjectComparator.SORT_BY_NAME;
@@ -324,7 +324,7 @@ public class ProjectsFragment extends DA {
             v.dismiss();
             refreshProjectsList();
         });
-        dialog.setNegativeButton("Cancel", null);
+        dialog.setNegativeButton(R.string.projects_cancel, null);
         dialog.show();
     }
 

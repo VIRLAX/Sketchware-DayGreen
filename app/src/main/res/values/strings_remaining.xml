@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="projects_title">Projects</string>
+    <string name="projects_sort_options">Sort options</string>
+    <string name="projects_sort_by_name">Sort by Project Name</string>
+    <string name="projects_sort_by_id">Sort by ID</string>
+    <string name="projects_sort_ascending">Ascending (A-Z)</string>
+    <string name="projects_sort_descending">Descending (Z-A)</string>
+    <string name="projects_save">Save</string>
+    <string name="projects_cancel">Cancel</string>
+    <string name="apk_selected">Selected APK</string>
+    <string name="apk_path_placeholder">APK path will appear here</string>
+    <string name="apk_select_file">Select file</string>
+</resources>

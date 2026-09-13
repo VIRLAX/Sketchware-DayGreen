@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="projects_title">Proyek</string>
+    <string name="projects_sort_options">Opsi pengurutan</string>
+    <string name="projects_sort_by_name">Urutkan berdasarkan Nama Proyek</string>
+    <string name="projects_sort_by_id">Urutkan berdasarkan ID</string>
+    <string name="projects_sort_ascending">Naik (A-Z)</string>
+    <string name="projects_sort_descending">Turun (Z-A)</string>
+    <string name="projects_save">Simpan</string>
+    <string name="projects_cancel">Batal</string>
+    <string name="apk_selected">APK yang dipilih</string>
+    <string name="apk_path_placeholder">Path APK akan muncul di sini</string>
+    <string name="apk_select_file">Pilih file</string>
+</resources>
