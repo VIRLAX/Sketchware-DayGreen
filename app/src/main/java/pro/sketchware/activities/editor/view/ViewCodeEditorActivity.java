@@ -20,6 +20,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import a.a.a.cC;
 import a.a.a.jC;
 import io.github.rosemoe.sora.event.ContentChangeEvent;
+import mod.hey.studios.util.Helper;
 import pro.sketchware.R;
 import pro.sketchware.editor.SketchwareCodeEditor;
 import pro.sketchware.activities.appcompat.ManageAppCompatActivity;
