@@ -9,9 +9,10 @@ if (analyticsEnabled) {
     apply plugin: "com.google.firebase.crashlytics"
 }
 
-// Some translated values contain literal, malformed \\u sequences. AAPT treats
-// those as Unicode escapes and aborts resource compilation. Preserve them as
-// literal text before any variant resource merge runs.
+// AAPT interprets any odd-length run of backslashes before `u` as a Unicode
+// escape. Some translated strings contain malformed literal sequences. Make
+// only malformed runs even-length so the text remains literal and compilation
+// stays deterministic.
 def sanitizeInvalidResourceEscapes = tasks.register("sanitizeInvalidResourceEscapes") {
     doLast {
         def resourceFile = file("src/main/res/values-in/strings.xml")
@@ -19,25 +20,31 @@ def sanitizeInvalidResourceEscapes = tasks.register("sanitizeInvalidResourceEsca
 
         def source = resourceFile.getText("UTF-8")
         def fixed = new StringBuilder(source.length())
-        for (int i = 0; i < source.length(); i++) {
-            char current = source.charAt(i)
-            if (current == '\\' && i + 1 < source.length() && source.charAt(i + 1) == 'u') {
-                boolean valid = i + 5 < source.length()
-                if (valid) {
-                    for (int j = i + 2; j <= i + 5; j++) {
-                        if (Character.digit(source.charAt(j), 16) < 0) {
-                            valid = false
-                            break
-                        }
+        int i = 0
+        while (i < source.length()) {
+            if (source.charAt(i) != '\\') {
+                fixed.append(source.charAt(i++))
+                continue
+            }
+
+            int runStart = i
+            while (i < source.length() && source.charAt(i) == '\\') i++
+            int runLength = i - runStart
+            boolean followedByU = i < source.length() && source.charAt(i) == 'u'
+            boolean validUnicode = followedByU && i + 4 < source.length()
+            if (validUnicode) {
+                for (int j = i + 1; j <= i + 4; j++) {
+                    if (Character.digit(source.charAt(j), 16) < 0) {
+                        validUnicode = false
+                        break
                     }
                 }
-                if (!valid) {
-                    fixed.append("\\\\")
-                } else {
-                    fixed.append('\\')
-                }
+            }
+
+            if (followedByU && !validUnicode) {
+                for (int j = 0; j < runLength * 2; j++) fixed.append('\\')
             } else {
-                fixed.append(current)
+                for (int j = 0; j < runLength; j++) fixed.append('\\')
             }
         }
 
@@ -63,7 +70,6 @@ android {
         minSdk = 26
         versionCode = 173
         versionName = "v8.0.4-daygreen"
-
         buildConfigField("String", "SKETCHUB_API_KEY", "\"${System.getenv("SKETCHUB_API_KEY")}\"")
     }
 
@@ -119,9 +125,7 @@ android {
         compose = false
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 
     configurations.implementation {
         exclude group: 'javax.inject', module: 'javax.inject'
@@ -154,15 +158,12 @@ androidComponents {
     onVariants(selector().all()) { variant ->
         def flavorName = variant.productFlavors.isEmpty() ? "noflavor" : variant.productFlavors.collect { it.second }.join("-")
         def buildType = variant.buildType
-        variant.outputs.forEach { output ->
-            output.outputFileName.set("app-${buildType}-${flavorName}.apk")
-        }
+        variant.outputs.forEach { output -> output.outputFileName.set("app-${buildType}-${flavorName}.apk") }
     }
 }
 
 dependencies {
     implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
-
     implementation "androidx.appcompat:appcompat:1.7.1"
     implementation "androidx.core:core-splashscreen:1.2.0"
     implementation "androidx.activity:activity-ktx:1.13.0"
@@ -173,83 +174,53 @@ dependencies {
     implementation "com.google.android.material:material:1.14.0"
     implementation "com.airbnb.android:lottie:6.7.1"
     implementation "com.google.android.flexbox:flexbox:3.0.0"
-
     implementation "com.github.bumptech.glide:glide:5.0.7"
-
     implementation 'androidx.exifinterface:exifinterface:1.4.2'
     implementation "androidx.preference:preference-ktx:1.2.1"
     implementation "androidx.datastore:datastore-preferences:1.2.1"
     implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
-    implementation 'androidx.activity:activity-ktx:1.13.0'
     implementation 'androidx.activity:activity:1.13.0'
-
     def editorGroupId = "io.github.Rosemoe.sora-editor"
     implementation platform("$editorGroupId:bom:0.23.5")
     implementation "$editorGroupId:editor"
     implementation "$editorGroupId:language-java"
     implementation "$editorGroupId:language-textmate"
-
     implementation "de.hdodenhof:circleimageview:3.1.0"
-
     implementation 'io.coil-kt:coil:2.7.0'
     implementation 'io.coil-kt:coil-svg:2.7.0'
-
     android26Implementation "com.android.tools.build:bundletool:1.18.1"
     android33Implementation "com.android.tools.build:bundletool:1.18.3"
-
-    //noinspection GradleDependency copied from above dependency for not just runtime access
     android26Implementation "com.google.protobuf:protobuf-java:3.19.2"
     android33Implementation "com.google.protobuf:protobuf-java:4.35.1"
-    //noinspection GradleDependency
-    android26Implementation("com.android.tools:sdklib:25.3.0") {
-        exclude group: "com.intellij", module: "annotations"
-    }
-    android33Implementation("com.android.tools:sdklib:26.4.3") {
-        exclude group: "com.intellij", module: "annotations"
-    }
+    android26Implementation("com.android.tools:sdklib:25.3.0") { exclude group: "com.intellij", module: "annotations" }
+    android33Implementation("com.android.tools:sdklib:26.4.3") { exclude group: "com.intellij", module: "annotations" }
     android26Implementation "com.android.tools:r8:8.11.18"
     android33Implementation "com.android.tools:r8:8.13.17"
     implementation "com.github.Iyxan23:zipalign-java:1.2.2"
-
     implementation "com.google.code.gson:gson:2.14.0"
     implementation "com.madgag:scpkix-jdk15on:1.47.0.3"
-
     implementation 'io.noties.markwon:core:4.6.2'
-
     implementation "com.squareup.okhttp3:okhttp:5.4.0"
     implementation "com.squareup.okio:okio:3.17.0"
-
     android26Implementation "org.eclipse.jdt:ecj:3.26.0"
     android33Implementation "org.eclipse.jdt:ecj:3.34.0"
-
     implementation "com.github.waelchateur:kotlinc-for-sketchware:2.1.21_rc3"
     compileOnly "org.jetbrains.kotlin:kotlin-compiler:2.1.21"
     implementation 'io.github.itsaky:nb-javac-android:17.0.0.3'
     implementation 'com.fasterxml.woodstox:woodstox-core:6.5.1'
     implementation 'javax.xml.stream:stax-api:1.0-2'
-
     implementation "com.github.Cosmic-Ide:DependencyResolver:05ec26af0b"
     implementation "com.github.PranavPurwar:filepicker:74526bea66"
-
     implementation 'com.guardsquare:proguard-core:9.0.2'
-
     implementation "com.github.topjohnwu.libsu:core:5.0.4"
     implementation "dev.chrisbanes.insetter:insetter:0.6.1"
-
-    android26Implementation("com.github.javaparser:javaparser-symbol-solver-core:3.25.3") {
-        exclude group: "com.google.guava", module: "guava"
-    }
-    android33Implementation("com.github.javaparser:javaparser-symbol-solver-core:3.28.1") {
-        exclude group: "com.google.guava", module: "guava"
-    }
-
+    android26Implementation("com.github.javaparser:javaparser-symbol-solver-core:3.25.3") { exclude group: "com.google.guava", module: "guava" }
+    android33Implementation("com.github.javaparser:javaparser-symbol-solver-core:3.28.1") { exclude group: "com.google.guava", module: "guava" }
     implementation platform("com.google.firebase:firebase-bom:34.16.0")
     implementation "com.google.firebase:firebase-crashlytics"
     implementation "com.google.firebase:firebase-analytics"
     implementation "com.google.firebase:firebase-messaging"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs_nio:2.1.5"
-
     implementation "net.lingala.zip4j:zip4j:2.11.6"
-
     implementation 'com.github.skydoves:colorpickerview:2.4.0'
 }
