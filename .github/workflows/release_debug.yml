@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
@@ -78,20 +78,16 @@ jobs:
                 done
           done
 
-      - name: Upload android26 debug APK
+      - name: Publish debug APKs as release assets
         if: steps.check_version.outputs.changed == 'false'
-        uses: actions/upload-artifact@v5
-        with:
-          name: app-android26-debug
-          path: app/build/outputs/apk/android26/debug/*.apk
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Upload android33 debug APK
-        if: steps.check_version.outputs.changed == 'false'
-        uses: actions/upload-artifact@v5
-        with:
-          name: app-android33-debug
-          path: app/build/outputs/apk/android33/debug/*.apk
-          if-no-files-found: error
-          retention-days: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="debug-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Debug APK build ${GITHUB_RUN_NUMBER}" \
+            --notes "Generated from commit ${GITHUB_SHA}." \
+            --prerelease \
+            app/build/outputs/apk/android26/debug/*.apk \
+            app/build/outputs/apk/android33/debug/*.apk
