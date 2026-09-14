@@ -93,7 +93,6 @@
                 android:layout_height="match_parent"
                 android:background="#070B10"
                 android:clipChildren="false"
-                android:foreground="@drawable/bg_preview_device_stage"
                 android:padding="12dp" />
         </ScrollView>
 
