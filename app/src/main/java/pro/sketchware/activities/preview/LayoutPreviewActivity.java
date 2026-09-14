@@ -113,21 +113,21 @@ public class LayoutPreviewActivity extends BaseAppCompatActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         active = true;
         if (liveKey != null) mainHandler.post(livePoll);
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
         active = false;
         mainHandler.removeCallbacks(livePoll);
         super.onPause();
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         active = false;
         mainHandler.removeCallbacksAndMessages(null);
         parserExecutor.shutdownNow();
