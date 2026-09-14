@@ -5,6 +5,10 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -57,6 +61,23 @@ jobs:
         if: steps.check_version.outputs.changed == 'false'
         run: ./gradlew assembleDebug --stacktrace
 
+      - name: Remove previous debug APK artifacts
+        if: steps.check_version.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for artifact_name in app-android26-debug app-android33-debug; do
+            gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/actions/artifacts" \
+              --jq ".artifacts[] | select(.name == \"${artifact_name}\") | .id" \
+              | while read -r artifact_id; do
+                  gh api --method DELETE \
+                    -H "Accept: application/vnd.github+json" \
+                    "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+                done
+          done
+
       - name: Upload android26 debug APK
         if: steps.check_version.outputs.changed == 'false'
         uses: actions/upload-artifact@v5
@@ -64,7 +85,7 @@ jobs:
           name: app-android26-debug
           path: app/build/outputs/apk/android26/debug/*.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
 
       - name: Upload android33 debug APK
         if: steps.check_version.outputs.changed == 'false'
@@ -73,4 +94,4 @@ jobs:
           name: app-android33-debug
           path: app/build/outputs/apk/android33/debug/*.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
