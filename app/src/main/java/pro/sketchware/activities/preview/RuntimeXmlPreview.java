@@ -1,13 +1,15 @@
 package pro.sketchware.activities.preview;
 
+import android.animation.LayoutTransition;
+import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -28,8 +30,8 @@ import android.widget.Toast;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 
 import com.google.android.material.appbar.AppBarLayout;
-import com.google.android.material.button.MaterialButton;
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButton;
 
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -43,21 +45,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * Small, safe runtime renderer for the XML preview. It intentionally does not
- * execute project Java/Kotlin code or inflate arbitrary app resources.
- */
+/** Safe native Android View renderer for the live XML preview. */
 public final class RuntimeXmlPreview {
-
-    private static final String ANDROID_NS = "http://schemas.android.com/apk/res/android";
-
-    private RuntimeXmlPreview() {
-    }
+    private RuntimeXmlPreview() { }
 
     public static ParseResult parse(String xml) {
-        if (xml == null || xml.trim().isEmpty()) {
-            return ParseResult.error("XML is empty", 1, 1);
-        }
+        if (xml == null || xml.trim().isEmpty()) return ParseResult.error("XML is empty", 1, 1);
         try {
             XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
             factory.setNamespaceAware(true);
@@ -76,24 +69,16 @@ public final class RuntimeXmlPreview {
                         node.attributes.put(key, parser.getAttributeValue(i));
                     }
                     if (stack.isEmpty()) {
-                        if (!roots.isEmpty()) {
-                            return ParseResult.error("XML must contain one root view", parser.getLineNumber(), parser.getColumnNumber());
-                        }
+                        if (!roots.isEmpty()) return ParseResult.error("XML must contain one root view", parser.getLineNumber(), parser.getColumnNumber());
                         roots.add(node);
-                    } else {
-                        stack.get(stack.size() - 1).children.add(node);
-                    }
+                    } else stack.get(stack.size() - 1).children.add(node);
                     stack.add(node);
-                } else if (event == XmlPullParser.END_TAG && !stack.isEmpty()) {
-                    stack.remove(stack.size() - 1);
-                }
+                } else if (event == XmlPullParser.END_TAG && !stack.isEmpty()) stack.remove(stack.size() - 1);
             }
             if (roots.isEmpty()) return ParseResult.error("No root view found", 1, 1);
             return ParseResult.success(roots.get(0));
         } catch (XmlPullParserException e) {
-            int line = e.getLineNumber() > 0 ? e.getLineNumber() : 1;
-            int column = e.getColumnNumber() > 0 ? e.getColumnNumber() : 1;
-            return ParseResult.error(cleanMessage(e.getMessage()), line, column);
+            return ParseResult.error(cleanMessage(e.getMessage()), e.getLineNumber() > 0 ? e.getLineNumber() : 1, e.getColumnNumber() > 0 ? e.getColumnNumber() : 1);
         } catch (IOException | RuntimeException e) {
             return ParseResult.error(cleanMessage(e.getMessage()), 1, 1);
         }
@@ -101,8 +86,10 @@ public final class RuntimeXmlPreview {
 
     public static RenderResult render(Context context, Node root) {
         ArrayList<String> warnings = new ArrayList<>();
+        PreviewLog.log("Rendering <" + root.tagName + ">");
         View view = build(context, root, null, warnings);
         if (view == null) return RenderResult.error("Unsupported root view: " + root.tagName, warnings);
+        PreviewLog.log("Rendered native view tree" + (warnings.isEmpty() ? "" : " with " + warnings.size() + " warning(s)"));
         return RenderResult.success(view, warnings);
     }
 
@@ -110,9 +97,9 @@ public final class RuntimeXmlPreview {
         View view = createView(context, node.tagName, warnings);
         if (view == null) return null;
         applyAttributes(context, view, node, warnings);
-
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
+            if (parseBoolean(attr(node, "android:animateLayoutChanges"), false)) group.setLayoutTransition(new LayoutTransition());
             for (Node child : node.children) {
                 View childView = build(context, child, group, warnings);
                 if (childView == null) {
@@ -125,9 +112,7 @@ public final class RuntimeXmlPreview {
                 }
                 group.addView(childView, layoutParams(context, childView, child, group));
             }
-        } else if (!node.children.isEmpty()) {
-            warnings.add(node.tagName + " cannot contain child views");
-        }
+        } else if (!node.children.isEmpty()) warnings.add(node.tagName + " cannot contain child views");
         return view;
     }
 
@@ -141,26 +126,22 @@ public final class RuntimeXmlPreview {
             case "AppBarLayout": return new AppBarLayout(context);
             case "Toolbar": return new androidx.appcompat.widget.Toolbar(context);
             case "MaterialToolbar": return new MaterialToolbar(context);
-            case "ScrollView":
-            case "NestedScrollView": return new ScrollView(context);
-            case "HorizontalScrollView":
-            case "HScrollView": return new HorizontalScrollView(context);
+            case "ScrollView": case "NestedScrollView": return new ScrollView(context);
+            case "HorizontalScrollView": case "HScrollView": return new HorizontalScrollView(context);
             case "TextView": return new TextView(context);
-            case "EditText":
-            case "TextInputEditText": return new EditText(context);
+            case "EditText": case "TextInputEditText": return new EditText(context);
             case "Button": return new Button(context);
             case "MaterialButton": return new MaterialButton(context);
             case "CheckBox": return new CheckBox(context);
-            case "Switch":
-            case "MaterialSwitch": return new Switch(context);
-            case "ImageView":
-            case "ImageButton": return new ImageView(context);
+            case "Switch": case "MaterialSwitch": return new Switch(context);
+            case "ImageView": case "ImageButton": return new ImageView(context);
             case "ProgressBar": return new ProgressBar(context);
             case "SeekBar": return new SeekBar(context);
             case "Spinner": return new Spinner(context);
             case "Space": return new Space(context);
             default:
                 warnings.add("Unsupported widget " + tag + ", rendered as a placeholder");
+                PreviewLog.log("Unsupported widget: " + tag);
                 TextView placeholder = new TextView(context);
                 placeholder.setText("<" + name + ">");
                 placeholder.setGravity(Gravity.CENTER);
@@ -178,13 +159,10 @@ public final class RuntimeXmlPreview {
             view.setId(resId != 0 ? resId : View.generateViewId());
             view.setTag(idName);
         }
-
         String enabled = attr(node, "android:enabled");
         if (enabled != null) view.setEnabled(parseBoolean(enabled, true));
         String visibility = attr(node, "android:visibility");
-        if (visibility != null) {
-            view.setVisibility("gone".equals(visibility) ? View.GONE : "invisible".equals(visibility) ? View.INVISIBLE : View.VISIBLE);
-        }
+        if (visibility != null) view.setVisibility("gone".equals(visibility) ? View.GONE : "invisible".equals(visibility) ? View.INVISIBLE : View.VISIBLE);
         String alpha = attr(node, "android:alpha");
         if (alpha != null) view.setAlpha(parseFloat(alpha, 1f));
         String rotation = attr(node, "android:rotation");
@@ -210,12 +188,36 @@ public final class RuntimeXmlPreview {
         }
         if (view instanceof Button || view instanceof MaterialButton) {
             String idName = resourceName(attr(node, "android:id"));
-            view.setOnClickListener(v -> Toast.makeText(context, "Preview click" + (idName.isEmpty() ? "" : ": " + idName), Toast.LENGTH_SHORT).show());
+            view.setOnClickListener(v -> {
+                PreviewLog.log("Click: " + (idName.isEmpty() ? node.tagName : idName));
+                Toast.makeText(context, "Preview click" + (idName.isEmpty() ? "" : ": " + idName), Toast.LENGTH_SHORT).show();
+            });
         }
-        for (String key : node.attributes.keySet()) {
-            if (!SUPPORTED.contains(key)) warnings.add("Unsupported attribute: " + key + " on " + node.tagName);
-        }
+        applyPreviewAnimation(view, node);
+        for (String key : node.attributes.keySet()) if (!SUPPORTED.contains(key)) warnings.add("Unsupported attribute: " + key + " on " + node.tagName);
     }
+
+    private static void applyPreviewAnimation(View view, Node node) {
+        String animation = attr(node, "app:previewAnimation");
+        if (animation == null) return;
+        ObjectAnimator animator;
+        switch (animation) {
+            case "fade": animator = ObjectAnimator.ofFloat(view, View.ALPHA, 0.15f, 1f); break;
+            case "pulse": animator = ObjectAnimator.ofFloat(view, View.SCALE_X, 0.96f, 1.04f, 1f); break;
+            case "slide": animator = ObjectAnimator.ofFloat(view, View.TRANSLATION_Y, dp(view, 18), 0f); break;
+            case "scale": animator = ObjectAnimator.ofPropertyValuesHolder(view,
+                    android.animation.PropertyValuesHolder.ofFloat(View.SCALE_X, 0.85f, 1f),
+                    android.animation.PropertyValuesHolder.ofFloat(View.SCALE_Y, 0.85f, 1f)); break;
+            default: PreviewLog.log("Unknown preview animation: " + animation); return;
+        }
+        animator.setDuration(260L);
+        animator.setInterpolator(new DecelerateInterpolator());
+        if ("pulse".equals(animation)) animator.setRepeatCount(ObjectAnimator.INFINITE);
+        animator.start();
+        PreviewLog.log("Animation: " + animation + " on <" + node.tagName + ">");
+    }
+
+    private static int dp(View view, int value) { return (int) (value * view.getResources().getDisplayMetrics().density + .5f); }
 
     private static final java.util.Set<String> SUPPORTED = new java.util.HashSet<>(java.util.Arrays.asList(
             "android:id", "android:layout_width", "android:layout_height", "android:layout_margin", "android:layout_marginLeft",
@@ -223,7 +225,8 @@ public final class RuntimeXmlPreview {
             "android:text", "android:hint", "android:textSize", "android:textColor", "android:background", "android:padding",
             "android:paddingLeft", "android:paddingTop", "android:paddingRight", "android:paddingBottom", "android:gravity",
             "android:layout_gravity", "android:visibility", "android:enabled", "android:checked", "android:max", "android:progress",
-            "android:alpha", "android:rotation", "android:src", "android:scaleType", "tools:listitem"));
+            "android:alpha", "android:rotation", "android:src", "android:scaleType", "android:singleLine", "android:animateLayoutChanges",
+            "app:previewAnimation", "tools:listitem"));
 
     private static void applyTextAttributes(Context context, TextView view, Node node, List<String> warnings) {
         String text = attr(node, "android:text");
@@ -235,8 +238,7 @@ public final class RuntimeXmlPreview {
         String color = attr(node, "android:textColor");
         if (color != null) {
             Integer parsed = resolveColor(context, color);
-            if (parsed != null) view.setTextColor(parsed);
-            else warnings.add("Cannot resolve text color: " + color);
+            if (parsed != null) view.setTextColor(parsed); else warnings.add("Cannot resolve text color: " + color);
         }
         String singleLine = attr(node, "android:singleLine");
         if (singleLine != null) view.setSingleLine(parseBoolean(singleLine, false));
@@ -244,16 +246,8 @@ public final class RuntimeXmlPreview {
 
     private static void applyPadding(Context context, View view, Node node) {
         String all = attr(node, "android:padding");
-        if (all != null) {
-            int p = parseDimension(context, all, 0);
-            view.setPadding(p, p, p, p);
-            return;
-        }
-        int left = parseDimension(context, attr(node, "android:paddingLeft"), 0);
-        int top = parseDimension(context, attr(node, "android:paddingTop"), 0);
-        int right = parseDimension(context, attr(node, "android:paddingRight"), 0);
-        int bottom = parseDimension(context, attr(node, "android:paddingBottom"), 0);
-        view.setPadding(left, top, right, bottom);
+        if (all != null) { int p = parseDimension(context, all, 0); view.setPadding(p, p, p, p); return; }
+        view.setPadding(parseDimension(context, attr(node, "android:paddingLeft"), 0), parseDimension(context, attr(node, "android:paddingTop"), 0), parseDimension(context, attr(node, "android:paddingRight"), 0), parseDimension(context, attr(node, "android:paddingBottom"), 0));
     }
 
     private static ViewGroup.LayoutParams layoutParams(Context context, View child, Node node, ViewGroup parent) {
@@ -271,10 +265,7 @@ public final class RuntimeXmlPreview {
         int bottom = parseDimension(context, attr(node, "android:layout_marginBottom"), -1);
         int all = parseDimension(context, attr(node, "android:layout_margin"), -1);
         if (all >= 0) left = top = right = bottom = all;
-        if (params instanceof ViewGroup.MarginLayoutParams) {
-            ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
-            margins.setMargins(Math.max(0, left), Math.max(0, top), Math.max(0, right), Math.max(0, bottom));
-        }
+        if (params instanceof ViewGroup.MarginLayoutParams) ((ViewGroup.MarginLayoutParams) params).setMargins(Math.max(0, left), Math.max(0, top), Math.max(0, right), Math.max(0, bottom));
         String gravity = attr(node, "android:layout_gravity");
         if (gravity != null && params instanceof FrameLayout.LayoutParams) ((FrameLayout.LayoutParams) params).gravity = parseGravity(gravity);
         if (gravity != null && params instanceof LinearLayout.LayoutParams) ((LinearLayout.LayoutParams) params).gravity = parseGravity(gravity);
@@ -284,14 +275,10 @@ public final class RuntimeXmlPreview {
     private static void applyBackground(Context context, View view, String value, List<String> warnings) {
         if (value == null) return;
         Integer color = resolveColor(context, value);
-        if (color != null) {
-            view.setBackgroundColor(color);
-            return;
-        }
+        if (color != null) { view.setBackgroundColor(color); return; }
         if (value.startsWith("@drawable/")) {
             int id = context.getResources().getIdentifier(resourceName(value), "drawable", context.getPackageName());
-            if (id != 0) view.setBackgroundResource(id);
-            else warnings.add("Cannot resolve drawable: " + value);
+            if (id != 0) view.setBackgroundResource(id); else warnings.add("Cannot resolve drawable: " + value);
         }
     }
 
@@ -312,8 +299,7 @@ public final class RuntimeXmlPreview {
                 return id == 0 ? null : context.getResources().getColor(id, context.getTheme());
             }
             if (value.startsWith("#")) return Color.parseColor(value);
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) { }
         return null;
     }
 
@@ -331,61 +317,33 @@ public final class RuntimeXmlPreview {
             if (lower.endsWith("dp")) return (int) (Float.parseFloat(lower.substring(0, lower.length() - 2)) * context.getResources().getDisplayMetrics().density + .5f);
             if (lower.endsWith("sp")) return (int) (Float.parseFloat(lower.substring(0, lower.length() - 2)) * context.getResources().getDisplayMetrics().scaledDensity + .5f);
             if (lower.endsWith("px")) return (int) Float.parseFloat(lower.substring(0, lower.length() - 2));
-            if (lower.startsWith("@dimen/")) {
-                int id = context.getResources().getIdentifier(resourceName(lower), "dimen", context.getPackageName());
-                return id == 0 ? fallback : (int) context.getResources().getDimension(id);
-            }
+            if (lower.startsWith("@dimen/")) { int id = context.getResources().getIdentifier(resourceName(lower), "dimen", context.getPackageName()); return id == 0 ? fallback : (int) context.getResources().getDimension(id); }
             return (int) Float.parseFloat(lower);
-        } catch (Exception ignored) {
-            return fallback;
-        }
+        } catch (Exception ignored) { return fallback; }
     }
 
-    private static int parseInt(String value, int fallback) {
-        try { return Integer.parseInt(value); } catch (Exception ignored) { return fallback; }
-    }
-
-    private static float parseFloat(String value, float fallback) {
-        try { return Float.parseFloat(value); } catch (Exception ignored) { return fallback; }
-    }
-
-    private static boolean parseBoolean(String value, boolean fallback) {
-        if ("true".equalsIgnoreCase(value)) return true;
-        if ("false".equalsIgnoreCase(value)) return false;
-        return fallback;
-    }
+    private static int parseInt(String value, int fallback) { try { return Integer.parseInt(value); } catch (Exception ignored) { return fallback; } }
+    private static float parseFloat(String value, float fallback) { try { return Float.parseFloat(value); } catch (Exception ignored) { return fallback; } }
+    private static boolean parseBoolean(String value, boolean fallback) { if ("true".equalsIgnoreCase(value)) return true; if ("false".equalsIgnoreCase(value)) return false; return fallback; }
 
     private static int parseGravity(String value) {
         int gravity = 0;
-        for (String token : value.split("\\|")) {
-            switch (token.trim()) {
-                case "center": gravity |= Gravity.CENTER; break;
-                case "center_horizontal": gravity |= Gravity.CENTER_HORIZONTAL; break;
-                case "center_vertical": gravity |= Gravity.CENTER_VERTICAL; break;
-                case "left": case "start": gravity |= Gravity.LEFT; break;
-                case "right": case "end": gravity |= Gravity.RIGHT; break;
-                case "top": gravity |= Gravity.TOP; break;
-                case "bottom": gravity |= Gravity.BOTTOM; break;
-            }
+        for (String token : value.split("\\|")) switch (token.trim()) {
+            case "center": gravity |= Gravity.CENTER; break;
+            case "center_horizontal": gravity |= Gravity.CENTER_HORIZONTAL; break;
+            case "center_vertical": gravity |= Gravity.CENTER_VERTICAL; break;
+            case "left": case "start": gravity |= Gravity.LEFT; break;
+            case "right": case "end": gravity |= Gravity.RIGHT; break;
+            case "top": gravity |= Gravity.TOP; break;
+            case "bottom": gravity |= Gravity.BOTTOM; break;
         }
         return gravity;
     }
 
     private static String attr(Node node, String key) { return node.attributes.get(key); }
-    private static String resourceName(String value) {
-        if (value == null) return "";
-        int slash = value.indexOf('/');
-        return slash >= 0 ? value.substring(slash + 1) : value;
-    }
-    private static String simpleName(String tag) {
-        int dot = tag == null ? -1 : tag.lastIndexOf('.');
-        return dot >= 0 ? tag.substring(dot + 1) : tag;
-    }
-    private static String cleanMessage(String message) {
-        if (TextUtils.isEmpty(message)) return "Invalid XML";
-        int newline = message.indexOf('\n');
-        return newline >= 0 ? message.substring(0, newline) : message;
-    }
+    private static String resourceName(String value) { if (value == null) return ""; int slash = value.indexOf('/'); return slash >= 0 ? value.substring(slash + 1) : value; }
+    private static String simpleName(String tag) { int dot = tag == null ? -1 : tag.lastIndexOf('.'); return dot >= 0 ? tag.substring(dot + 1) : tag; }
+    private static String cleanMessage(String message) { if (TextUtils.isEmpty(message)) return "Invalid XML"; int newline = message.indexOf('\n'); return newline >= 0 ? message.substring(0, newline) : message; }
 
     public static final class Node {
         public final String tagName;
@@ -395,23 +353,18 @@ public final class RuntimeXmlPreview {
     }
 
     public static final class ParseResult {
-        public final Node root;
-        public final String error;
-        public final int line;
-        public final int column;
+        public final Node root; public final String error; public final int line; public final int column;
         private ParseResult(Node root, String error, int line, int column) { this.root = root; this.error = error; this.line = line; this.column = column; }
         static ParseResult success(Node root) { return new ParseResult(root, null, 0, 0); }
-        static ParseResult error(String error, int line, int column) { return new ParseResult(null, error, line, column); }
+        static ParseResult error(String error, int line, int column) { PreviewLog.log("XML error at " + line + ":" + column + " " + error); return new ParseResult(null, error, line, column); }
         public boolean isSuccess() { return root != null && error == null; }
     }
 
     public static final class RenderResult {
-        public final View root;
-        public final List<String> warnings;
-        public final String error;
+        public final View root; public final List<String> warnings; public final String error;
         private RenderResult(View root, List<String> warnings, String error) { this.root = root; this.warnings = warnings; this.error = error; }
         static RenderResult success(View root, List<String> warnings) { return new RenderResult(root, warnings, null); }
-        static RenderResult error(String error, List<String> warnings) { return new RenderResult(null, warnings, error); }
+        static RenderResult error(String error, List<String> warnings) { PreviewLog.log("Render error: " + error); return new RenderResult(null, warnings, error); }
         public boolean isSuccess() { return root != null && error == null; }
     }
 }
