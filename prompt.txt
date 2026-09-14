@@ -1,0 +1,433 @@
+FEATURE SPECIFICATION
+
+Interactive XML Runtime Preview + XML ↔ Visual Editor Synchronization
+
+PROJECT CONTEXT
+
+Saya sedang mengembangkan/modifikasi Sketchware Open Source.
+
+Saya ingin menambahkan dua fitur utama:
+
+1. Interactive Runtime XML Preview
+2. XML ↔ Visual Drag-and-Drop Editor Synchronization
+
+Jangan mengubah arsitektur project secara besar-besaran sebelum memahami kode yang sudah ada.
+
+Sebelum menulis kode:
+
+- inspeksi struktur project;
+- cari implementasi XML Editor yang sudah ada;
+- cari implementasi View/Visual Editor;
+- cari model data View/Widget yang digunakan Sketchware;
+- cari sistem property View;
+- cari sistem Event/Component;
+- gunakan kembali class dan logic yang sudah tersedia jika memungkinkan.
+
+Jangan membuat sistem baru yang menduplikasi sistem lama tanpa alasan.
+
+---
+
+FEATURE 1
+
+Interactive Runtime XML Preview
+
+TUJUAN
+
+Upgrade XML Preview yang saat ini hanya bersifat visual/statik menjadi preview yang terasa seperti aplikasi Android yang sedang berjalan.
+
+Preview harus menggunakan Android View asli/in-memory selama memungkinkan.
+
+Ini BUKAN proses compile APK penuh.
+
+XML harus dapat:
+
+1. dibaca dari XML Editor;
+2. diparse;
+3. dirender menjadi Android View;
+4. ditempatkan ke preview container;
+5. diperbarui ketika XML berubah.
+
+CONTOH
+
+Input:
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hello World"/>
+
+    <EditText
+        android:id="@+id/name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Name"/>
+
+    <Button
+        android:id="@+id/login"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Login"/>
+
+</LinearLayout>
+
+Preview harus menghasilkan View Android yang benar-benar dapat berinteraksi.
+
+INTERAKSI MINIMAL
+
+Komponen yang didukung harus dapat:
+
+- Button menerima click;
+- Button menunjukkan pressed/ripple state jika tersedia;
+- EditText menerima focus;
+- EditText dapat menerima input keyboard;
+- CheckBox/Switch dapat berubah state;
+- ScrollView dapat di-scroll;
+- TextView dapat berubah text;
+- visibility dapat berubah;
+- enabled/disabled state dapat berubah;
+- basic drawable/state dapat ditampilkan;
+- basic animation dapat dijalankan jika didukung;
+- Toast dapat disimulasikan jika terdapat event/logic yang kompatibel;
+- perpindahan antar-layout dapat disimulasikan jika sistem project memungkinkan.
+
+LIVE UPDATE
+
+Ketika XML berubah:
+
+XML Editor
+    ↓
+Debounce perubahan
+    ↓
+Parse XML
+    ↓
+Build/Update View Tree
+    ↓
+Update Preview
+
+Gunakan debounce agar preview tidak melakukan rebuild pada setiap karakter.
+
+Contoh target:
+
+300–500 ms setelah user berhenti mengetik
+
+Jangan rebuild seluruh View Tree jika perubahan hanya mempengaruhi property tertentu dan selective update memungkinkan.
+
+ERROR HANDLING
+
+Jika XML invalid:
+
+- jangan crash;
+- jangan menghancurkan preview terakhir yang valid;
+- tampilkan error XML;
+- tunjukkan lokasi/line error jika memungkinkan;
+- tetap pertahankan preview terakhir yang berhasil.
+
+Contoh:
+
+XML Error
+Line 12:
+Expected closing tag
+
+RESOURCE SUPPORT
+
+Gunakan resource project jika memungkinkan:
+
+- @string/...
+- @color/...
+- @drawable/...
+- @dimen/...
+- @font/...
+- @style/...
+- @id/...
+
+Buat ResourceResolver yang kompatibel dengan resource/model project yang sudah ada.
+
+Jangan membuat resource system baru jika Sketchware sudah memiliki mekanismenya.
+
+---
+
+FEATURE 2
+
+XML → Visual Drag-and-Drop Editor
+
+TUJUAN
+
+XML yang dibuat atau ditempelkan user pada XML Editor harus dapat dikonversi otomatis menjadi struktur Visual Editor.
+
+Contoh:
+
+XML Editor
+    ↓
+Paste XML
+    ↓
+Parse XML
+    ↓
+Node Tree
+    ↓
+Convert ke Sketchware View Model
+    ↓
+Visual Editor
+
+CONTOH
+
+Jika user memasukkan:
+
+<LinearLayout
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/title"
+        android:text="Hello"/>
+
+    <Button
+        android:id="@+id/login"
+        android:text="Login"/>
+
+</LinearLayout>
+
+Visual Editor harus otomatis menjadi:
+
+LinearLayout
+ ├── TextView
+ │    ├── id: title
+ │    └── text: Hello
+ │
+ └── Button
+      ├── id: login
+      └── text: Login
+
+Komponen tersebut harus menjadi objek Visual Editor sebenarnya, bukan hanya gambar/screenshot.
+
+---
+
+XML NODE PARSER
+
+Buat parser yang mengubah XML menjadi struktur node.
+
+Contoh:
+
+class XmlViewNode {
+    String tagName;
+    String id;
+    Map<String, String> attributes;
+    List<XmlViewNode> children;
+}
+
+Contoh hasil:
+
+LinearLayout
+    children:
+        TextView
+        Button
+
+Kemudian buat adapter/converter:
+
+XmlViewNode
+      ↓
+Sketchware View/Widget Model
+
+Gunakan model View yang sudah digunakan project jika tersedia.
+
+---
+
+PROPERTY MAPPING
+
+Minimal dukung:
+
+android:id
+android:layout_width
+android:layout_height
+android:orientation
+android:text
+android:hint
+android:textSize
+android:textColor
+android:background
+android:padding
+android:margin
+android:gravity
+android:visibility
+android:enabled
+android:checked
+
+Jika sebuah attribute belum didukung:
+
+- jangan crash;
+- simpan sebagai unsupported attribute jika arsitektur memungkinkan;
+- berikan warning;
+- jangan menghapus attribute secara diam-diam.
+
+---
+
+ID REGISTRATION
+
+Jika XML memiliki:
+
+android:id="@+id/login"
+
+sistem harus:
+
+1. membaca ID;
+2. mendaftarkan ID ke model project;
+3. membuat View dengan ID tersebut;
+4. memastikan ID dapat dikenali oleh Event/Component system;
+5. mencegah duplicate ID.
+
+Jika ID sudah ada, gunakan aturan konflik yang aman dan jangan membuat duplicate identifier.
+
+---
+
+TWO-WAY SYNCHRONIZATION
+
+Fitur ini harus benar-benar dua arah.
+
+XML → Visual
+
+XML changed
+    ↓
+Parse
+    ↓
+Update View Model
+    ↓
+Update Visual Editor
+
+Visual → XML
+
+Jika user mengubah:
+
+- posisi;
+- ukuran;
+- text;
+- warna;
+- visibility;
+- property;
+- ID;
+- child View;
+
+maka XML harus dapat diregenerate/update berdasarkan model Visual Editor.
+
+Jangan melakukan sinkronisasi dengan cara parsing XML mentah berulang kali jika project sudah mempunyai internal View model.
+
+---
+
+SINGLE SOURCE OF TRUTH
+
+Gunakan satu internal UI/View model sebagai sumber data utama jika memungkinkan.
+
+Arsitektur yang diharapkan:
+
+             ┌───────────────┐
+             │   XML MODEL   │
+             └───────┬───────┘
+                     ↕
+             ┌───────────────┐
+             │   VIEW MODEL  │
+             └───────┬───────┘
+                     ↕
+          ┌──────────┴──────────┐
+          ↓                     ↓
+   XML Editor              Visual Editor
+          ↓                     ↓
+       XML Text             Drag & Drop
+
+Tujuannya agar XML Editor dan Visual Editor tidak memiliki dua state yang saling bertentangan.
+
+---
+
+IMPORTANT IMPLEMENTATION RULES
+
+Jangan langsung membuat:
+
+- Java compiler;
+- APK compiler;
+- emulator;
+- full Java interpreter;
+- BeanShell runtime;
+- sistem rendering HTML/WebView;
+
+hanya untuk memenuhi fitur ini.
+
+Prioritaskan Android View asli dan sistem internal Sketchware yang sudah ada.
+
+Jika suatu behavior Java tidak mungkin dijalankan tanpa compile, jangan berpura-pura menjalankannya.
+
+Buat compatibility layer/simulation terbatas dan dokumentasikan behavior yang didukung.
+
+Contoh:
+
+Supported:
+Button click
+EditText input
+visibility
+text change
+basic animation
+basic navigation
+Toast simulation
+
+Unsupported:
+arbitrary Java code execution
+reflection-heavy code
+external library execution
+native code
+full Activity lifecycle
+
+---
+
+PERFORMANCE
+
+Gunakan:
+
+- debounce XML parsing;
+- caching;
+- selective View update jika memungkinkan;
+- reuse View ketika aman;
+- jangan rebuild seluruh preview untuk perubahan kecil;
+- jangan membuat memory leak;
+- jangan membuat thread UI blocking.
+
+Preview harus tetap responsif.
+
+---
+
+DELIVERABLE
+
+Setelah memahami source code project, berikan:
+
+1. class yang harus dibuat;
+2. class existing yang harus dimodifikasi;
+3. method yang harus ditambahkan;
+4. alur data;
+5. XML parser;
+6. View model converter;
+7. preview renderer;
+8. synchronization mechanism;
+9. error handling;
+10. contoh implementasi Java;
+11. daftar file yang berubah;
+12. langkah integrasi.
+
+Jangan mengarang nama class existing.
+
+Jika nama class atau arsitektur belum diketahui, cari terlebih dahulu di source code project.
+
+Implementasikan secara bertahap.
+
+PHASE 1:
+Interactive XML Preview.
+
+PHASE 2:
+XML → Visual Editor.
+
+PHASE 3:
+Visual Editor → XML.
+
+PHASE 4:
+Event/Component synchronization.
+
+Setiap phase harus tetap dapat dikompilasi dan diuji sebelum melanjutkan ke phase berikutnya.
