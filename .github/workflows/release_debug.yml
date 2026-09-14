@@ -49,6 +49,10 @@ jobs:
         if: steps.check_version.outputs.changed == 'false'
         run: chmod +x gradlew
 
+      - name: Remove local SDK configuration
+        if: steps.check_version.outputs.changed == 'false'
+        run: rm -f local.properties
+
       - name: Build debug APKs
         if: steps.check_version.outputs.changed == 'false'
         run: ./gradlew assembleDebug --stacktrace

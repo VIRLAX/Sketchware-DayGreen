@@ -80,21 +80,30 @@ public class LayoutPreviewActivity extends BaseAppCompatActivity {
                     return;
                 }
                 lastValidNode = parsed.root;
-                showPreview(rendered.root, rendered.warnings);
+                showPreview(rendered.root, parsed.root, rendered.warnings);
             });
         });
     }
 
-    private void showPreview(View view, java.util.List<String> warnings) {
+    private void showPreview(View view, RuntimeXmlPreview.Node node, java.util.List<String> warnings) {
         binding.previewContainer.removeAllViews();
-        binding.previewContainer.addView(view, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        binding.previewContainer.addView(view, layoutParamsForRoot(node));
         if (warnings.isEmpty()) {
             binding.previewError.setVisibility(View.GONE);
         } else {
             binding.previewError.setVisibility(View.VISIBLE);
             binding.previewError.setText("Warnings\n• " + android.text.TextUtils.join("\n• ", warnings));
         }
+    }
+
+    private ViewGroup.LayoutParams layoutParamsForRoot(RuntimeXmlPreview.Node node) {
+        String width = node.attributes.get("android:layout_width");
+        String height = node.attributes.get("android:layout_height");
+        int resolvedWidth = "match_parent".equals(width)
+                ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT;
+        int resolvedHeight = "match_parent".equals(height)
+                ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT;
+        return new ViewGroup.LayoutParams(resolvedWidth, resolvedHeight);
     }
 
     private void showError(String message) {

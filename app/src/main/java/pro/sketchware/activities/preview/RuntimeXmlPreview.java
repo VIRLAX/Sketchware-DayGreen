@@ -25,7 +25,11 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
+
+import com.google.android.material.appbar.AppBarLayout;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.appbar.MaterialToolbar;
 
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -133,6 +137,10 @@ public final class RuntimeXmlPreview {
             case "LinearLayout": return new LinearLayout(context);
             case "FrameLayout": return new FrameLayout(context);
             case "RelativeLayout": return new RelativeLayout(context);
+            case "CoordinatorLayout": return new CoordinatorLayout(context);
+            case "AppBarLayout": return new AppBarLayout(context);
+            case "Toolbar": return new androidx.appcompat.widget.Toolbar(context);
+            case "MaterialToolbar": return new MaterialToolbar(context);
             case "ScrollView":
             case "NestedScrollView": return new ScrollView(context);
             case "HorizontalScrollView":
@@ -254,6 +262,8 @@ public final class RuntimeXmlPreview {
         ViewGroup.LayoutParams params;
         if (parent instanceof LinearLayout) params = new LinearLayout.LayoutParams(width, height);
         else if (parent instanceof RelativeLayout) params = new RelativeLayout.LayoutParams(width, height);
+        else if (parent instanceof CoordinatorLayout) params = new CoordinatorLayout.LayoutParams(width, height);
+        else if (parent instanceof AppBarLayout) params = new AppBarLayout.LayoutParams(width, height);
         else params = new FrameLayout.LayoutParams(width, height);
         int left = parseDimension(context, attr(node, "android:layout_marginLeft"), -1);
         int top = parseDimension(context, attr(node, "android:layout_marginTop"), -1);
