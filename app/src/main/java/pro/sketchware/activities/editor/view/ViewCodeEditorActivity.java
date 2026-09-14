@@ -35,6 +35,8 @@ import pro.sketchware.utility.SketchwareUtil;
 import pro.sketchware.utility.XmlSyncHelper;
 
 public class ViewCodeEditorActivity extends BaseAppCompatActivity {
+    private static final int ACTION_SYNC_UI = 6;
+
     private ViewCodeEditorBinding binding;
     private SketchwareCodeEditor editor;
     private SharedPreferences prefs;
@@ -47,7 +49,7 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
     private String livePreviewKey;
     private final Handler syncHandler = new Handler(Looper.getMainLooper());
     private String lastSyncedXml;
-    private final Runnable debouncedModelSync = () -> syncEditedLayoutToModel();
+    private final Runnable debouncedModelSync = this::syncEditedLayoutToModel;
 
     private final OnBackPressedCallback onBackPressedCallback = new OnBackPressedCallback(true) {
         @Override public void handleOnBackPressed() {
@@ -98,6 +100,7 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
         EditorUtils.loadXmlConfig(editor, "layout/" + title);
         lastSyncedXml = content;
         publishLiveSource(content);
+        setSyncStatus("Auto UI sync: ready");
         editor.subscribeAlways(ContentChangeEvent.class, event -> {
             String xml = editor.getText().toString();
             publishLiveSource(xml);
@@ -118,18 +121,36 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
     }
 
     private void scheduleModelSync() {
-        String title = getIntent().getStringExtra("title");
-        if (title == null || !title.endsWith(".xml")) return;
+        if (!isLayoutFile()) return;
         syncHandler.removeCallbacks(debouncedModelSync);
+        setSyncStatus("Auto UI sync: waiting for XML changes");
         syncHandler.postDelayed(debouncedModelSync, 500L);
     }
 
     private void syncEditedLayoutToModel() {
+        if (!isLayoutFile()) return;
         String xml = editor.getText().toString();
-        if (xml.equals(lastSyncedXml)) return;
+        if (xml.equals(lastSyncedXml)) {
+            setSyncStatus("Auto UI sync: ready");
+            return;
+        }
         String title = getIntent().getStringExtra("title");
-        if (title == null || !title.endsWith(".xml")) return;
-        if (XmlSyncHelper.syncXml(this, sc_id, title, xml)) lastSyncedXml = xml;
+        boolean synced = XmlSyncHelper.syncXml(this, sc_id, title, xml);
+        if (synced) {
+            lastSyncedXml = xml;
+            setSyncStatus("Auto UI sync: synced to Visual Editor");
+        } else {
+            setSyncStatus("Auto UI sync: XML error, Visual Editor kept last valid UI");
+        }
+    }
+
+    private boolean isLayoutFile() {
+        String title = getIntent().getStringExtra("title");
+        return title != null && title.endsWith(".xml");
+    }
+
+    private void setSyncStatus(String status) {
+        if (binding != null && binding.syncStatus != null) binding.syncStatus.setText(status);
     }
 
     @Override public void onSaveInstanceState(Bundle outState) {
@@ -141,6 +162,7 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
         menu.add(Menu.NONE, 0, Menu.NONE, "Undo").setIcon(R.drawable.ic_mtrl_undo).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         menu.add(Menu.NONE, 1, Menu.NONE, "Redo").setIcon(R.drawable.ic_mtrl_redo).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         menu.add(Menu.NONE, 2, Menu.NONE, "Save").setIcon(R.drawable.ic_mtrl_save).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        menu.add(Menu.NONE, ACTION_SYNC_UI, Menu.NONE, "Build UI").setIcon(R.drawable.ic_mtrl_refresh).setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         if (projectFile.fileType == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY && projectLibrary.isEnabled()) menu.add(Menu.NONE, 3, Menu.NONE, "Edit AppCompat");
         menu.add(Menu.NONE, 5, Menu.NONE, "Layout Preview");
         return true;
@@ -151,6 +173,11 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
             case 0: editor.undo(); return true;
             case 1: editor.redo(); return true;
             case 2: save(); return true;
+            case ACTION_SYNC_UI:
+                syncHandler.removeCallbacks(debouncedModelSync);
+                syncEditedLayoutToModel();
+                SketchwareUtil.toast("UI model updated");
+                return true;
             case 3: toAppCompat(); return true;
             case 5: toLayoutPreview(); return true;
             default: return super.onOptionsItemSelected(item);
@@ -182,6 +209,7 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
     private void save() {
         try {
             if (!isContentModified()) {
+                syncEditedLayoutToModel();
                 SketchwareUtil.toast("No changes to save");
                 return;
             }
@@ -190,9 +218,11 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
             content = editor.getText().toString();
             lastSyncedXml = content;
             publishLiveSource(content);
+            setSyncStatus("Auto UI sync: saved to Visual Editor");
             isEdited = true;
             SketchwareUtil.toast("Saved");
         } catch (Exception e) {
+            setSyncStatus("Auto UI sync: error");
             SketchwareUtil.toastError(e.toString());
         }
     }
@@ -202,6 +232,7 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
     private void exitWithEditedContent() {
         String filename = getIntent().getStringExtra("title");
         try {
+            syncEditedLayoutToModel();
             ViewBeanParser parser = new ViewBeanParser(editor.getText().toString());
             parser.setSkipRoot(true);
             java.util.ArrayList<com.besome.sketch.beans.ViewBean> parsedLayout = parser.parse();
@@ -215,6 +246,7 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
             jC.a(sc_id).c.put(filename, parsedLayout);
             setResult(RESULT_OK);
         } catch (Exception e) {
+            setSyncStatus("Auto UI sync: error");
             SketchwareUtil.toastError(e.toString());
         }
     }
