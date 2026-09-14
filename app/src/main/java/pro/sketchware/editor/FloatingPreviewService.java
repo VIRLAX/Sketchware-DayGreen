@@ -20,24 +20,23 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
-import com.besome.sketch.beans.ViewBean;
-import com.besome.sketch.editor.view.ViewPane;
 import com.google.android.material.card.MaterialCardView;
 
-import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import a.a.a.jC;
 import pro.sketchware.R;
-import pro.sketchware.tools.ViewBeanParser;
+import pro.sketchware.activities.preview.PreviewLog;
+import pro.sketchware.activities.preview.RuntimeXmlPreview;
 
 public class FloatingPreviewService extends Service {
     public static final String ACTION_SHOW = "pro.sketchware.action.SHOW_FLOATING_PREVIEW";
@@ -47,8 +46,8 @@ public class FloatingPreviewService extends Service {
     public static final String EXTRA_SC_ID = "sc_id";
     private static final String CHANNEL_ID = "floating_preview";
     private static final String PREFS = "floating_preview";
-    private static final int MIN_WIDTH = 220;
-    private static final int MIN_HEIGHT = 180;
+    private static final int MIN_WIDTH = 260;
+    private static final int MIN_HEIGHT = 220;
     private static volatile boolean running;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -68,22 +67,13 @@ public class FloatingPreviewService extends Service {
     public static boolean isRunning() { return running; }
 
     public static void showOrUpdate(Context context, String xml, String title, String scId) {
-        Intent intent = new Intent(context, FloatingPreviewService.class)
-                .setAction(ACTION_SHOW)
-                .putExtra(EXTRA_XML, xml)
-                .putExtra(EXTRA_TITLE, title)
-                .putExtra(EXTRA_SC_ID, scId);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent);
-        else context.startService(intent);
+        Intent intent = new Intent(context, FloatingPreviewService.class).setAction(ACTION_SHOW)
+                .putExtra(EXTRA_XML, xml).putExtra(EXTRA_TITLE, title).putExtra(EXTRA_SC_ID, scId);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent); else context.startService(intent);
     }
 
-    public static void stop(Context context) {
-        context.stopService(new Intent(context, FloatingPreviewService.class));
-    }
-
-    public static void updatePreview(Context context, String xml, String title, String scId) {
-        if (running) showOrUpdate(context, xml, title, scId);
-    }
+    public static void stop(Context context) { context.stopService(new Intent(context, FloatingPreviewService.class)); }
+    public static void updatePreview(Context context, String xml, String title, String scId) { if (running) showOrUpdate(context, xml, title, scId); }
 
     @Override public void onCreate() {
         super.onCreate();
@@ -98,10 +88,7 @@ public class FloatingPreviewService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
         if (intent != null && ACTION_SHOW.equals(intent.getAction())) {
             latestXml = intent.getStringExtra(EXTRA_XML);
             latestTitle = intent.getStringExtra(EXTRA_TITLE);
@@ -112,15 +99,14 @@ public class FloatingPreviewService extends Service {
         return START_STICKY;
     }
 
-    private Context themedContext() {
-        return new ContextThemeWrapper(this, R.style.Theme_SketchwarePro);
-    }
+    private Context themedContext() { return new ContextThemeWrapper(this, R.style.Theme_SketchwarePro); }
 
     private void showIcon() {
         if (floatingIcon != null || !Settings.canDrawOverlays(this)) return;
         Context context = themedContext();
         floatingIcon = LayoutInflater.from(context).inflate(R.layout.floating_icon_layout, null);
         iconParams = baseParams(dp(60), dp(60));
+        iconParams.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         iconParams.gravity = Gravity.TOP | Gravity.END;
         iconParams.x = -dp(24);
         iconParams.y = getPrefs().getInt("icon_y", dp(120));
@@ -131,13 +117,9 @@ public class FloatingPreviewService extends Service {
 
     private void showPreview() {
         if (!Settings.canDrawOverlays(this)) return;
-        if (floatingIcon != null) {
-            windowManager.removeView(floatingIcon);
-            floatingIcon = null;
-        }
+        if (floatingIcon != null) { windowManager.removeView(floatingIcon); floatingIcon = null; }
         Context context = themedContext();
-        previewWindow = (MaterialCardView) LayoutInflater.from(context)
-                .inflate(R.layout.floating_preview_layout, null);
+        previewWindow = (MaterialCardView) LayoutInflater.from(context).inflate(R.layout.floating_preview_layout, null);
         TextView title = previewWindow.findViewById(R.id.preview_title);
         title.setText(latestTitle == null ? "Layout Preview" : latestTitle);
         View header = previewWindow.findViewById(R.id.preview_header);
@@ -146,142 +128,102 @@ public class FloatingPreviewService extends Service {
         header.setOnTouchListener(new PreviewDragTouch());
         close.setOnClickListener(v -> minimize());
         resize.setOnTouchListener(new ResizeTouch());
-        int width = getPrefs().getInt("width", Math.min(dp(380), screenWidth - dp(24)));
-        int height = getPrefs().getInt("height", Math.min(dp(680), screenHeight - dp(120)));
+        int width = getPrefs().getInt("width", Math.min(dp(390), screenWidth - dp(24)));
+        int height = getPrefs().getInt("height", Math.min(dp(700), screenHeight - dp(100)));
         previewParams = baseParams(Math.max(MIN_WIDTH, width), Math.max(MIN_HEIGHT, height));
         previewParams.gravity = Gravity.TOP | Gravity.START;
         previewParams.x = getPrefs().getInt("x", Math.max(dp(8), (screenWidth - width) / 2));
         previewParams.y = getPrefs().getInt("y", dp(96));
         windowManager.addView(previewWindow, previewParams);
+        PreviewLog.setListener(lines -> mainHandler.post(() -> updateLog(lines)));
         requestRender(latestXml);
     }
 
     private void minimize() {
-        if (previewWindow != null) {
-            saveBounds();
-            windowManager.removeView(previewWindow);
-            previewWindow = null;
-        }
+        PreviewLog.setListener(null);
+        if (previewWindow != null) { saveBounds(); windowManager.removeView(previewWindow); previewWindow = null; }
         showIcon();
     }
 
     private void requestRender(String xml) {
-        if (xml == null || latestScId == null || latestTitle == null) return;
+        if (xml == null || latestTitle == null) return;
         final int generation = renderGeneration.incrementAndGet();
         final String requestedXml = xml;
-        final String requestedTitle = latestTitle;
-        final String requestedScId = latestScId;
         renderExecutor.execute(() -> {
-            try {
-                ArrayList<ViewBean> beans = new ViewBeanParser(requestedXml).parse();
-                mainHandler.post(() -> {
-                    if (generation == renderGeneration.get()) renderBeans(beans, requestedTitle, requestedScId);
-                });
-            } catch (Exception e) {
-                mainHandler.post(() -> {
-                    if (generation == renderGeneration.get()) showRenderError(e.getMessage());
-                });
-            }
+            RuntimeXmlPreview.ParseResult parsed = RuntimeXmlPreview.parse(requestedXml);
+            mainHandler.post(() -> {
+                if (generation != renderGeneration.get() || previewWindow == null) return;
+                if (!parsed.isSuccess()) {
+                    showRenderError("XML error line " + parsed.line + ", col " + parsed.column + ": " + parsed.error);
+                    return;
+                }
+                RuntimeXmlPreview.RenderResult rendered = RuntimeXmlPreview.render(themedContext(), parsed.root);
+                if (!rendered.isSuccess()) { showRenderError("Render error: " + rendered.error); return; }
+                renderNative(rendered.root, parsed.root, rendered.warnings);
+            });
         });
     }
 
-    private void renderBeans(ArrayList<ViewBean> beans, String title, String scId) {
-        if (previewWindow == null) return;
-        try {
-            ViewPane pane = new ViewPane(this);
-            pane.initialize(scId, true);
-            pane.setResourceManager(jC.d(scId));
-            pane.updateRootLayout(scId, title);
-            for (ViewBean bean : beans) {
-                if (beans.indexOf(bean) == 0) {
-                    bean.parent = "root";
-                    bean.parentType = 0;
-                    bean.preParent = null;
-                    bean.preParentType = -1;
-                }
-                View item = pane.createItemView(bean);
-                pane.addViewAndUpdateIndex(item);
-            }
-            FrameLayout content = previewWindow.findViewById(R.id.preview_content);
-            content.removeAllViews();
-            content.addView(pane, new FrameLayout.LayoutParams(-1, -2));
-        } catch (Exception e) {
-            showRenderError(e.getMessage());
-        }
+    private void renderNative(View root, RuntimeXmlPreview.Node node, List<String> warnings) {
+        FrameLayout content = previewWindow.findViewById(R.id.preview_content);
+        content.removeAllViews();
+        content.addView(root, rootLayoutParams(node));
+        PreviewLog.log("LIVE render complete" + (warnings.isEmpty() ? "" : ", " + warnings.size() + " warning(s)"));
+        updateLog(PreviewLog.snapshot());
+    }
+
+    private FrameLayout.LayoutParams rootLayoutParams(RuntimeXmlPreview.Node node) {
+        int width = "match_parent".equals(node.attributes.get("android:layout_width")) ? -1 : -2;
+        int height = "match_parent".equals(node.attributes.get("android:layout_height")) ? -1 : -2;
+        return new FrameLayout.LayoutParams(width, height);
     }
 
     private void showRenderError(String message) {
+        PreviewLog.log(message);
+        TextView status = previewWindow == null ? null : previewWindow.findViewById(R.id.preview_status);
+        if (status != null) status.setText("ERROR");
+        updateLog(PreviewLog.snapshot());
+    }
+
+    private void updateLog(List<String> lines) {
         if (previewWindow == null) return;
-        FrameLayout content = previewWindow.findViewById(R.id.preview_content);
-        content.removeAllViews();
-        TextView error = new TextView(this);
-        error.setText("Preview belum bisa dirender\n" + (message == null ? "Periksa XML dan resource layout." : message));
-        error.setTextColor(Color.WHITE);
-        error.setPadding(dp(16), dp(16), dp(16), dp(16));
-        content.addView(error, new FrameLayout.LayoutParams(-1, -2));
+        TextView status = previewWindow.findViewById(R.id.preview_status);
+        TextView log = previewWindow.findViewById(R.id.preview_log);
+        if (status != null) status.setText("LIVE  •  native");
+        if (log != null) {
+            int start = Math.max(0, lines.size() - 6);
+            log.setText(android.text.TextUtils.join("\n", lines.subList(start, lines.size())));
+        }
     }
 
     private WindowManager.LayoutParams baseParams(int width, int height) {
-        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
+        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height, type,
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                        | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
+        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
         params.gravity = Gravity.TOP | Gravity.START;
         return params;
     }
 
     private class PreviewDragTouch implements View.OnTouchListener {
-        private float downX, downY;
-        private int startX, startY;
+        private float downX, downY; private int startX, startY;
         @Override public boolean onTouch(View v, MotionEvent event) {
             if (previewParams == null || previewWindow == null) return false;
-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                downX = event.getRawX();
-                downY = event.getRawY();
-                startX = previewParams.x;
-                startY = previewParams.y;
-                return true;
-            }
-            if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                previewParams.x = startX + (int) (event.getRawX() - downX);
-                previewParams.y = startY + (int) (event.getRawY() - downY);
-                windowManager.updateViewLayout(previewWindow, previewParams);
-                return true;
-            }
-            if (event.getAction() == MotionEvent.ACTION_UP) {
-                if (event.getRawX() - downX < -dp(96)) minimize();
-                else saveBounds();
-                return true;
-            }
+            if (event.getAction() == MotionEvent.ACTION_DOWN) { downX = event.getRawX(); downY = event.getRawY(); startX = previewParams.x; startY = previewParams.y; return true; }
+            if (event.getAction() == MotionEvent.ACTION_MOVE) { previewParams.x = startX + (int) (event.getRawX() - downX); previewParams.y = startY + (int) (event.getRawY() - downY); windowManager.updateViewLayout(previewWindow, previewParams); return true; }
+            if (event.getAction() == MotionEvent.ACTION_UP) { if (event.getRawX() - downX < -dp(96)) minimize(); else saveBounds(); return true; }
             return true;
         }
     }
 
     private class ResizeTouch implements View.OnTouchListener {
-        private float downX, downY;
-        private int startWidth, startHeight;
+        private float downX, downY; private int startWidth, startHeight;
         @Override public boolean onTouch(View v, MotionEvent event) {
             if (previewParams == null || previewWindow == null) return false;
-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                downX = event.getRawX();
-                downY = event.getRawY();
-                startWidth = previewParams.width;
-                startHeight = previewParams.height;
-                return true;
-            }
-            if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                previewParams.width = Math.max(MIN_WIDTH, startWidth + (int) (event.getRawX() - downX));
-                previewParams.height = Math.max(MIN_HEIGHT, startHeight + (int) (event.getRawY() - downY));
-                windowManager.updateViewLayout(previewWindow, previewParams);
-                return true;
-            }
-            if (event.getAction() == MotionEvent.ACTION_UP) {
-                saveBounds();
-                return true;
-            }
+            if (event.getAction() == MotionEvent.ACTION_DOWN) { downX = event.getRawX(); downY = event.getRawY(); startWidth = previewParams.width; startHeight = previewParams.height; return true; }
+            if (event.getAction() == MotionEvent.ACTION_MOVE) { previewParams.width = Math.max(MIN_WIDTH, startWidth + (int) (event.getRawX() - downX)); previewParams.height = Math.max(MIN_HEIGHT, startHeight + (int) (event.getRawY() - downY)); windowManager.updateViewLayout(previewWindow, previewParams); return true; }
+            if (event.getAction() == MotionEvent.ACTION_UP) { saveBounds(); return true; }
             return true;
         }
     }
@@ -289,43 +231,18 @@ public class FloatingPreviewService extends Service {
     private class DragTouch implements View.OnTouchListener {
         private final WindowManager.LayoutParams params;
         private final int touchSlop = ViewConfiguration.get(FloatingPreviewService.this).getScaledTouchSlop();
-        private float downX, downY;
-        private int startX, startY;
-        private boolean moved;
+        private float downX, downY; private int startX, startY; private boolean moved;
         DragTouch(WindowManager.LayoutParams params) { this.params = params; }
         @Override public boolean onTouch(View v, MotionEvent event) {
-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                downX = event.getRawX();
-                downY = event.getRawY();
-                startX = params.x;
-                startY = params.y;
-                moved = false;
-                return true;
-            }
-            if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                float dx = event.getRawX() - downX;
-                float dy = event.getRawY() - downY;
-                if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) moved = true;
-                params.x = startX + (int) dx;
-                params.y = startY + (int) dy;
-                if (floatingIcon != null) windowManager.updateViewLayout(floatingIcon, params);
-                return true;
-            }
-            if (event.getAction() == MotionEvent.ACTION_UP) {
-                if (moved) getPrefs().edit().putInt("icon_y", params.y).apply();
-                else v.performClick();
-                return true;
-            }
+            if (event.getAction() == MotionEvent.ACTION_DOWN) { downX = event.getRawX(); downY = event.getRawY(); startX = params.x; startY = params.y; moved = false; return true; }
+            if (event.getAction() == MotionEvent.ACTION_MOVE) { float dx = event.getRawX() - downX, dy = event.getRawY() - downY; if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) moved = true; params.x = startX + (int) dx; params.y = startY + (int) dy; if (floatingIcon != null) windowManager.updateViewLayout(floatingIcon, params); return true; }
+            if (event.getAction() == MotionEvent.ACTION_UP) { if (moved) getPrefs().edit().putInt("icon_y", params.y).apply(); else v.performClick(); return true; }
             return true;
         }
     }
 
     private android.content.SharedPreferences getPrefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
-    private void saveBounds() {
-        if (previewParams != null) getPrefs().edit().putInt("width", previewParams.width)
-                .putInt("height", previewParams.height).putInt("x", previewParams.x)
-                .putInt("y", previewParams.y).apply();
-    }
+    private void saveBounds() { if (previewParams != null) getPrefs().edit().putInt("width", previewParams.width).putInt("height", previewParams.height).putInt("x", previewParams.x).putInt("y", previewParams.y).apply(); }
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + .5f); }
 
     private void createNotificationChannel() {
@@ -336,23 +253,16 @@ public class FloatingPreviewService extends Service {
     }
 
     private Notification buildNotification() {
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_floating_preview)
-                .setContentTitle("Floating XML Preview")
-                .setContentText("Preview aktif di atas editor")
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .build();
+        return new NotificationCompat.Builder(this, CHANNEL_ID).setSmallIcon(R.drawable.ic_floating_preview)
+                .setContentTitle("Floating XML Preview").setContentText("Preview aktif di atas editor").setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW).build();
     }
 
     @Override public void onDestroy() {
+        PreviewLog.setListener(null);
         if (previewWindow != null) windowManager.removeView(previewWindow);
         if (floatingIcon != null) windowManager.removeView(floatingIcon);
-        previewWindow = null;
-        floatingIcon = null;
-        running = false;
-        renderExecutor.shutdownNow();
-        super.onDestroy();
+        previewWindow = null; floatingIcon = null; running = false; renderExecutor.shutdownNow(); super.onDestroy();
     }
 
     @Nullable @Override public IBinder onBind(Intent intent) { return null; }
