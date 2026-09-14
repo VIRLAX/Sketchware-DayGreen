@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -43,6 +45,9 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
     private ProjectLibraryBean projectLibrary;
     private InjectRootLayoutManager rootLayoutManager;
     private String livePreviewKey;
+    private final Handler syncHandler = new Handler(Looper.getMainLooper());
+    private String lastSyncedXml;
+    private final Runnable debouncedModelSync = () -> syncEditedLayoutToModel();
 
     private final OnBackPressedCallback onBackPressedCallback = new OnBackPressedCallback(true) {
         @Override public void handleOnBackPressed() {
@@ -91,8 +96,13 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
         editor.setTextSize(14);
         editor.setText(content);
         EditorUtils.loadXmlConfig(editor, "layout/" + title);
+        lastSyncedXml = content;
         publishLiveSource(content);
-        editor.subscribeAlways(ContentChangeEvent.class, event -> publishLiveSource(editor.getText().toString()));
+        editor.subscribeAlways(ContentChangeEvent.class, event -> {
+            String xml = editor.getText().toString();
+            publishLiveSource(xml);
+            scheduleModelSync();
+        });
         if (projectFile.fileType == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY && projectLibrary.isEnabled()) {
             setNote("Use AppCompat Manager to modify attributes for CoordinatorLayout, Toolbar, and other appcompat layout/widget.");
         }
@@ -105,6 +115,21 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
 
     private void publishLiveSource(String xml) {
         getSharedPreferences("xml_preview_live", MODE_PRIVATE).edit().putString(livePreviewKey, xml == null ? "" : xml).apply();
+    }
+
+    private void scheduleModelSync() {
+        String title = getIntent().getStringExtra("title");
+        if (title == null || !title.endsWith(".xml")) return;
+        syncHandler.removeCallbacks(debouncedModelSync);
+        syncHandler.postDelayed(debouncedModelSync, 500L);
+    }
+
+    private void syncEditedLayoutToModel() {
+        String xml = editor.getText().toString();
+        if (xml.equals(lastSyncedXml)) return;
+        String title = getIntent().getStringExtra("title");
+        if (title == null || !title.endsWith(".xml")) return;
+        if (XmlSyncHelper.syncXml(this, sc_id, title, xml)) lastSyncedXml = xml;
     }
 
     @Override public void onSaveInstanceState(Bundle outState) {
@@ -163,6 +188,7 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
             String title = getIntent().getStringExtra("title");
             if (title != null && title.endsWith(".xml")) XmlSyncHelper.syncXml(this, sc_id, title, editor.getText().toString());
             content = editor.getText().toString();
+            lastSyncedXml = content;
             publishLiveSource(content);
             isEdited = true;
             SketchwareUtil.toast("Saved");
@@ -191,5 +217,10 @@ public class ViewCodeEditorActivity extends BaseAppCompatActivity {
         } catch (Exception e) {
             SketchwareUtil.toastError(e.toString());
         }
+    }
+
+    @Override public void onDestroy() {
+        syncHandler.removeCallbacks(debouncedModelSync);
+        super.onDestroy();
     }
 }

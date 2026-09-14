@@ -19,16 +19,19 @@ import pro.sketchware.tools.ViewBeanParser;
 
 public class XmlSyncHelper {
 
-    public static void syncXml(Context context, String scId, String fileName, String xmlContent) {
+    public static boolean syncXml(Context context, String scId, String fileName, String xmlContent) {
         if (fileName.endsWith(".xml")) {
             if (isLayoutFile(context, fileName)) {
-                syncLayout(scId, fileName, xmlContent);
+                return syncLayout(scId, fileName, xmlContent);
             } else if (fileName.equals("strings.xml")) {
                 syncStrings(scId, xmlContent);
+                return true;
             } else if (fileName.equals("colors.xml")) {
                 syncColors(scId, xmlContent);
+                return true;
             }
         }
+        return false;
     }
 
     private static boolean isLayoutFile(Context context, String fileName) {
@@ -39,7 +42,7 @@ public class XmlSyncHelper {
         }
     }
 
-    private static void syncLayout(String scId, String fileName, String xmlContent) {
+    private static boolean syncLayout(String scId, String fileName, String xmlContent) {
         try {
             ViewBeanParser parser = new ViewBeanParser(xmlContent);
             parser.setSkipRoot(true);
@@ -62,8 +65,10 @@ public class XmlSyncHelper {
             
             jC.a(scId).c.put(fileName, parsedLayout);
             jC.a(scId).h(); 
+            return true;
         } catch (Exception e) {
             e.printStackTrace();
+            return false;
         }
     }
 
