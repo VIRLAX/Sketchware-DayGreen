@@ -14,21 +14,32 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import mod.hey.studios.util.CompileLogHelper;
-import pro.sketchware.R;
 import mod.hey.studios.code.SrcCodeEditor;
 
 /** Turns compiler file:line:column locations into one-tap editor links. */
 public final class CompileErrorNavigator {
-    private static final Pattern LOCATION = Pattern.compile("(?m)(/[^\\n\\r\\t ]+\\.(?:java|kt|xml)):(\\d+)(?::(\\d+))?");
+    private static final Pattern ABSOLUTE = Pattern.compile("(?m)(/[^\\n\\r]*?\\.(?:java|kt|xml)):(\\d+)(?::(\\d+))?");
+    private static final Pattern RELATIVE = Pattern.compile("(?m)(?:^|\\s)([A-Za-z0-9_./\\\\-]+\\.(?:java|kt|xml)):(\\d+)(?::(\\d+))?");
 
     private CompileErrorNavigator() { }
 
     public static void bind(Context context, TextView target, String log, String scId) {
         CharSequence colored = CompileLogHelper.getColoredLogs(context, log);
         SpannableStringBuilder value = new SpannableStringBuilder(colored);
-        Matcher matcher = LOCATION.matcher(value.toString());
+        int links = bindPattern(context, value, ABSOLUTE, scId);
+        links += bindPattern(context, value, RELATIVE, scId);
+        target.setText(value);
+        target.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
+        target.setLinksClickable(true);
+        target.setTextIsSelectable(false);
+        target.setContentDescription(links == 0 ? "Compile log" : links + " clickable source locations");
+    }
+
+    private static int bindPattern(Context context, SpannableStringBuilder value, Pattern pattern, String scId) {
+        Matcher matcher = pattern.matcher(value.toString());
         int links = 0;
         while (matcher.find()) {
+            if (value.getSpans(matcher.start(), matcher.end(), ClickableSpan.class).length > 0) continue;
             final String path = matcher.group(1);
             final int line = parseInt(matcher.group(2), 1);
             final int column = parseInt(matcher.group(3), 1);
@@ -47,11 +58,7 @@ public final class CompileErrorNavigator {
             value.setSpan(new ForegroundColorSpan(0xFF80CBC4), matcher.start(), matcher.end(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             links++;
         }
-        target.setText(value);
-        target.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
-        target.setLinksClickable(true);
-        target.setTextIsSelectable(false);
-        target.setContentDescription(links == 0 ? "Compile log" : links + " clickable source locations");
+        return links;
     }
 
     private static int parseInt(String value, int fallback) { try { return Integer.parseInt(value); } catch (Exception ignored) { return fallback; } }

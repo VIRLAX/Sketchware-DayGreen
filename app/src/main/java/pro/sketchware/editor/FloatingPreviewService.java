@@ -6,7 +6,6 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
@@ -20,7 +19,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -46,8 +44,9 @@ public class FloatingPreviewService extends Service {
     public static final String EXTRA_SC_ID = "sc_id";
     private static final String CHANNEL_ID = "floating_preview";
     private static final String PREFS = "floating_preview";
-    private static final int MIN_WIDTH = 260;
-    private static final int MIN_HEIGHT = 220;
+    private static final int MIN_WIDTH = 220;
+    private static final int MIN_HEIGHT = 360;
+    private static final long RENDER_DEBOUNCE_MS = 140L;
     private static volatile boolean running;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -63,6 +62,7 @@ public class FloatingPreviewService extends Service {
     private String latestScId;
     private int screenWidth;
     private int screenHeight;
+    private final Runnable debouncedRender = () -> requestRenderNow(latestXml);
 
     public static boolean isRunning() { return running; }
 
@@ -93,8 +93,10 @@ public class FloatingPreviewService extends Service {
             latestXml = intent.getStringExtra(EXTRA_XML);
             latestTitle = intent.getStringExtra(EXTRA_TITLE);
             latestScId = intent.getStringExtra(EXTRA_SC_ID);
+            RuntimeXmlPreview.setProjectId(latestScId);
             if (previewWindow == null && floatingIcon == null) showIcon();
-            requestRender(latestXml);
+            mainHandler.removeCallbacks(debouncedRender);
+            mainHandler.postDelayed(debouncedRender, RENDER_DEBOUNCE_MS);
         }
         return START_STICKY;
     }
@@ -105,11 +107,11 @@ public class FloatingPreviewService extends Service {
         if (floatingIcon != null || !Settings.canDrawOverlays(this)) return;
         Context context = themedContext();
         floatingIcon = LayoutInflater.from(context).inflate(R.layout.floating_icon_layout, null);
-        iconParams = baseParams(dp(60), dp(60));
+        iconParams = baseParams(dp(56), dp(56));
         iconParams.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         iconParams.gravity = Gravity.TOP | Gravity.END;
-        iconParams.x = -dp(24);
-        iconParams.y = getPrefs().getInt("icon_y", dp(120));
+        iconParams.x = -dp(18);
+        iconParams.y = Math.max(dp(90), Math.min(getPrefs().getInt("icon_y", dp(120)), screenHeight - dp(100)));
         floatingIcon.setOnClickListener(v -> showPreview());
         floatingIcon.setOnTouchListener(new DragTouch(iconParams));
         windowManager.addView(floatingIcon, iconParams);
@@ -128,15 +130,16 @@ public class FloatingPreviewService extends Service {
         header.setOnTouchListener(new PreviewDragTouch());
         close.setOnClickListener(v -> minimize());
         resize.setOnTouchListener(new ResizeTouch());
-        int width = getPrefs().getInt("width", Math.min(dp(390), screenWidth - dp(24)));
-        int height = getPrefs().getInt("height", Math.min(dp(700), screenHeight - dp(100)));
-        previewParams = baseParams(Math.max(MIN_WIDTH, width), Math.max(MIN_HEIGHT, height));
+        int width = clamp(getPrefs().getInt("width", dp(300)), dp(240), Math.max(dp(240), screenWidth - dp(20)));
+        int height = clamp(getPrefs().getInt("height", dp(560)), dp(420), Math.max(dp(420), screenHeight - dp(70)));
+        previewParams = baseParams(width, height);
         previewParams.gravity = Gravity.TOP | Gravity.START;
-        previewParams.x = getPrefs().getInt("x", Math.max(dp(8), (screenWidth - width) / 2));
-        previewParams.y = getPrefs().getInt("y", dp(96));
+        previewParams.x = Math.max(0, (screenWidth - width) / 2);
+        previewParams.y = Math.max(dp(48), (screenHeight - height) / 2);
         windowManager.addView(previewWindow, previewParams);
         PreviewLog.setListener(lines -> mainHandler.post(() -> updateLog(lines)));
-        requestRender(latestXml);
+        mainHandler.removeCallbacks(debouncedRender);
+        mainHandler.post(debouncedRender);
     }
 
     private void minimize() {
@@ -145,11 +148,13 @@ public class FloatingPreviewService extends Service {
         showIcon();
     }
 
-    private void requestRender(String xml) {
+    private void requestRenderNow(String xml) {
         if (xml == null || latestTitle == null) return;
         final int generation = renderGeneration.incrementAndGet();
         final String requestedXml = xml;
+        final String projectId = latestScId;
         renderExecutor.execute(() -> {
+            RuntimeXmlPreview.setProjectId(projectId);
             RuntimeXmlPreview.ParseResult parsed = RuntimeXmlPreview.parse(requestedXml);
             mainHandler.post(() -> {
                 if (generation != renderGeneration.get() || previewWindow == null) return;
@@ -175,7 +180,7 @@ public class FloatingPreviewService extends Service {
     private FrameLayout.LayoutParams rootLayoutParams(RuntimeXmlPreview.Node node) {
         int width = "match_parent".equals(node.attributes.get("android:layout_width")) ? -1 : -2;
         int height = "match_parent".equals(node.attributes.get("android:layout_height")) ? -1 : -2;
-        return new FrameLayout.LayoutParams(width, height);
+        return new FrameLayout.LayoutParams(width, height, Gravity.CENTER_HORIZONTAL);
     }
 
     private void showRenderError(String message) {
@@ -211,7 +216,7 @@ public class FloatingPreviewService extends Service {
         @Override public boolean onTouch(View v, MotionEvent event) {
             if (previewParams == null || previewWindow == null) return false;
             if (event.getAction() == MotionEvent.ACTION_DOWN) { downX = event.getRawX(); downY = event.getRawY(); startX = previewParams.x; startY = previewParams.y; return true; }
-            if (event.getAction() == MotionEvent.ACTION_MOVE) { previewParams.x = startX + (int) (event.getRawX() - downX); previewParams.y = startY + (int) (event.getRawY() - downY); windowManager.updateViewLayout(previewWindow, previewParams); return true; }
+            if (event.getAction() == MotionEvent.ACTION_MOVE) { previewParams.x = clamp(startX + (int) (event.getRawX() - downX), 0, Math.max(0, screenWidth - previewParams.width)); previewParams.y = clamp(startY + (int) (event.getRawY() - downY), dp(24), Math.max(dp(24), screenHeight - previewParams.height)); windowManager.updateViewLayout(previewWindow, previewParams); return true; }
             if (event.getAction() == MotionEvent.ACTION_UP) { if (event.getRawX() - downX < -dp(96)) minimize(); else saveBounds(); return true; }
             return true;
         }
@@ -222,7 +227,14 @@ public class FloatingPreviewService extends Service {
         @Override public boolean onTouch(View v, MotionEvent event) {
             if (previewParams == null || previewWindow == null) return false;
             if (event.getAction() == MotionEvent.ACTION_DOWN) { downX = event.getRawX(); downY = event.getRawY(); startWidth = previewParams.width; startHeight = previewParams.height; return true; }
-            if (event.getAction() == MotionEvent.ACTION_MOVE) { previewParams.width = Math.max(MIN_WIDTH, startWidth + (int) (event.getRawX() - downX)); previewParams.height = Math.max(MIN_HEIGHT, startHeight + (int) (event.getRawY() - downY)); windowManager.updateViewLayout(previewWindow, previewParams); return true; }
+            if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                int width = Math.max(MIN_WIDTH, startWidth + (int) (event.getRawX() - downX));
+                int height = Math.max(MIN_HEIGHT, (int) (width * 1.72f));
+                previewParams.width = Math.min(width, screenWidth - dp(12));
+                previewParams.height = Math.min(height, screenHeight - dp(48));
+                windowManager.updateViewLayout(previewWindow, previewParams);
+                return true;
+            }
             if (event.getAction() == MotionEvent.ACTION_UP) { saveBounds(); return true; }
             return true;
         }
@@ -243,6 +255,7 @@ public class FloatingPreviewService extends Service {
 
     private android.content.SharedPreferences getPrefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
     private void saveBounds() { if (previewParams != null) getPrefs().edit().putInt("width", previewParams.width).putInt("height", previewParams.height).putInt("x", previewParams.x).putInt("y", previewParams.y).apply(); }
+    private int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + .5f); }
 
     private void createNotificationChannel() {
@@ -258,7 +271,10 @@ public class FloatingPreviewService extends Service {
                 .setPriority(NotificationCompat.PRIORITY_LOW).build();
     }
 
+    @Override public void onTaskRemoved(Intent rootIntent) { stopSelf(); super.onTaskRemoved(rootIntent); }
+
     @Override public void onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null);
         PreviewLog.setListener(null);
         if (previewWindow != null) windowManager.removeView(previewWindow);
         if (floatingIcon != null) windowManager.removeView(floatingIcon);
