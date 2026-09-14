@@ -49,6 +49,18 @@
                     android:src="@drawable/ic_mtrl_close" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:id="@+id/sync_status"
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:singleLine="true"
+            android:text="Auto UI sync: ready"
+            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
     </com.google.android.material.appbar.AppBarLayout>
 
     <pro.sketchware.editor.SketchwareCodeEditor
