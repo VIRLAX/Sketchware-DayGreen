@@ -36,6 +36,7 @@ import pro.sketchware.R;
 import pro.sketchware.activities.preview.PreviewLog;
 import pro.sketchware.activities.preview.RuntimeXmlPreview;
 
+/** Floating native XML preview. It stays small and docked so the code editor remains usable. */
 public class FloatingPreviewService extends Service {
     public static final String ACTION_SHOW = "pro.sketchware.action.SHOW_FLOATING_PREVIEW";
     public static final String ACTION_STOP = "pro.sketchware.action.STOP_FLOATING_PREVIEW";
@@ -45,7 +46,7 @@ public class FloatingPreviewService extends Service {
     private static final String CHANNEL_ID = "floating_preview";
     private static final String PREFS = "floating_preview";
     private static final int MIN_WIDTH = 220;
-    private static final int MIN_HEIGHT = 360;
+    private static final int MIN_HEIGHT = 320;
     private static final long RENDER_DEBOUNCE_MS = 140L;
     private static volatile boolean running;
 
@@ -73,7 +74,10 @@ public class FloatingPreviewService extends Service {
     }
 
     public static void stop(Context context) { context.stopService(new Intent(context, FloatingPreviewService.class)); }
-    public static void updatePreview(Context context, String xml, String title, String scId) { if (running) showOrUpdate(context, xml, title, scId); }
+
+    public static void updatePreview(Context context, String xml, String title, String scId) {
+        if (running) showOrUpdate(context, xml, title, scId);
+    }
 
     @Override public void onCreate() {
         super.onCreate();
@@ -90,8 +94,10 @@ public class FloatingPreviewService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
         if (intent != null && ACTION_SHOW.equals(intent.getAction())) {
-            latestXml = intent.getStringExtra(EXTRA_XML);
+            String xml = intent.getStringExtra(EXTRA_XML);
+            latestXml = xml == null ? "" : xml;
             latestTitle = intent.getStringExtra(EXTRA_TITLE);
+            if (latestTitle == null) latestTitle = "Layout Preview";
             latestScId = intent.getStringExtra(EXTRA_SC_ID);
             RuntimeXmlPreview.setProjectId(latestScId);
             if (previewWindow == null && floatingIcon == null) showIcon();
@@ -110,7 +116,7 @@ public class FloatingPreviewService extends Service {
         iconParams = baseParams(dp(56), dp(56));
         iconParams.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         iconParams.gravity = Gravity.TOP | Gravity.END;
-        iconParams.x = -dp(18);
+        iconParams.x = -dp(14);
         iconParams.y = Math.max(dp(90), Math.min(getPrefs().getInt("icon_y", dp(120)), screenHeight - dp(100)));
         floatingIcon.setOnClickListener(v -> showPreview());
         floatingIcon.setOnTouchListener(new DragTouch(iconParams));
@@ -123,19 +129,21 @@ public class FloatingPreviewService extends Service {
         Context context = themedContext();
         previewWindow = (MaterialCardView) LayoutInflater.from(context).inflate(R.layout.floating_preview_layout, null);
         TextView title = previewWindow.findViewById(R.id.preview_title);
-        title.setText(latestTitle == null ? "Layout Preview" : latestTitle);
+        title.setText(latestTitle);
         View header = previewWindow.findViewById(R.id.preview_header);
         View close = previewWindow.findViewById(R.id.preview_close);
         View resize = previewWindow.findViewById(R.id.preview_resize);
         header.setOnTouchListener(new PreviewDragTouch());
         close.setOnClickListener(v -> minimize());
         resize.setOnTouchListener(new ResizeTouch());
-        int width = clamp(getPrefs().getInt("width", dp(300)), dp(240), Math.max(dp(240), screenWidth - dp(20)));
-        int height = clamp(getPrefs().getInt("height", dp(560)), dp(420), Math.max(dp(420), screenHeight - dp(70)));
+        int width = clamp(getPrefs().getInt("width", dp(292)), dp(240), Math.max(dp(240), screenWidth - dp(20)));
+        int height = clamp(getPrefs().getInt("height", dp(440)), dp(360), Math.max(dp(360), screenHeight - dp(70)));
         previewParams = baseParams(width, height);
         previewParams.gravity = Gravity.TOP | Gravity.START;
-        previewParams.x = Math.max(0, (screenWidth - width) / 2);
-        previewParams.y = Math.max(dp(48), (screenHeight - height) / 2);
+        boolean hasSavedPosition = getPrefs().contains("x") && getPrefs().contains("y");
+        previewParams.x = hasSavedPosition ? clamp(getPrefs().getInt("x", 0), 0, Math.max(0, screenWidth - width)) : Math.max(dp(8), screenWidth - width - dp(12));
+        previewParams.y = hasSavedPosition ? clamp(getPrefs().getInt("y", dp(64)), dp(24), Math.max(dp(24), screenHeight - height)) : dp(72);
+        previewParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN;
         windowManager.addView(previewWindow, previewParams);
         PreviewLog.setListener(lines -> mainHandler.post(() -> updateLog(lines)));
         mainHandler.removeCallbacks(debouncedRender);
@@ -159,7 +167,7 @@ public class FloatingPreviewService extends Service {
             mainHandler.post(() -> {
                 if (generation != renderGeneration.get() || previewWindow == null) return;
                 if (!parsed.isSuccess()) {
-                    showRenderError("XML error line " + parsed.line + ", col " + parsed.column + ": " + parsed.error);
+                    showRenderError("XML error at line " + parsed.line + ", column " + parsed.column + ": " + parsed.error);
                     return;
                 }
                 RuntimeXmlPreview.RenderResult rendered = RuntimeXmlPreview.render(themedContext(), parsed.root);
@@ -186,7 +194,7 @@ public class FloatingPreviewService extends Service {
     private void showRenderError(String message) {
         PreviewLog.log(message);
         TextView status = previewWindow == null ? null : previewWindow.findViewById(R.id.preview_status);
-        if (status != null) status.setText("ERROR");
+        if (status != null) { status.setText("CHECK XML"); status.setTextColor(0xFFB42318); }
         updateLog(PreviewLog.snapshot());
     }
 
@@ -194,9 +202,9 @@ public class FloatingPreviewService extends Service {
         if (previewWindow == null) return;
         TextView status = previewWindow.findViewById(R.id.preview_status);
         TextView log = previewWindow.findViewById(R.id.preview_log);
-        if (status != null) status.setText("LIVE  •  native");
+        if (status != null) { status.setText("LIVE  •  native interactive"); status.setTextColor(0xFF64748B); }
         if (log != null) {
-            int start = Math.max(0, lines.size() - 6);
+            int start = Math.max(0, lines.size() - 4);
             log.setText(android.text.TextUtils.join("\n", lines.subList(start, lines.size())));
         }
     }
@@ -223,13 +231,13 @@ public class FloatingPreviewService extends Service {
     }
 
     private class ResizeTouch implements View.OnTouchListener {
-        private float downX, downY; private int startWidth, startHeight;
+        private float downX, downY; private int startWidth;
         @Override public boolean onTouch(View v, MotionEvent event) {
             if (previewParams == null || previewWindow == null) return false;
-            if (event.getAction() == MotionEvent.ACTION_DOWN) { downX = event.getRawX(); downY = event.getRawY(); startWidth = previewParams.width; startHeight = previewParams.height; return true; }
+            if (event.getAction() == MotionEvent.ACTION_DOWN) { downX = event.getRawX(); downY = event.getRawY(); startWidth = previewParams.width; return true; }
             if (event.getAction() == MotionEvent.ACTION_MOVE) {
                 int width = Math.max(MIN_WIDTH, startWidth + (int) (event.getRawX() - downX));
-                int height = Math.max(MIN_HEIGHT, (int) (width * 1.72f));
+                int height = Math.max(MIN_HEIGHT, (int) (width * 1.52f));
                 previewParams.width = Math.min(width, screenWidth - dp(12));
                 previewParams.height = Math.min(height, screenHeight - dp(48));
                 windowManager.updateViewLayout(previewWindow, previewParams);
@@ -267,7 +275,7 @@ public class FloatingPreviewService extends Service {
 
     private Notification buildNotification() {
         return new NotificationCompat.Builder(this, CHANNEL_ID).setSmallIcon(R.drawable.ic_floating_preview)
-                .setContentTitle("Floating XML Preview").setContentText("Preview aktif di atas editor").setOngoing(true)
+                .setContentTitle("Floating XML Preview").setContentText("Preview aktif, editor tetap bisa dipakai").setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW).build();
     }
 
