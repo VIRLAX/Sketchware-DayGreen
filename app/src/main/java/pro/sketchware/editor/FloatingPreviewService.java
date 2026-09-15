@@ -139,6 +139,8 @@ public class FloatingPreviewService extends Service {
         int width = clamp(getPrefs().getInt("width", dp(292)), dp(240), Math.max(dp(240), screenWidth - dp(20)));
         int height = clamp(getPrefs().getInt("height", dp(440)), dp(360), Math.max(dp(360), screenHeight - dp(70)));
         previewParams = baseParams(width, height);
+        // The preview remains clickable, but cannot steal keyboard focus from the XML editor.
+        previewParams.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         previewParams.gravity = Gravity.TOP | Gravity.START;
         boolean hasSavedPosition = getPrefs().contains("x") && getPrefs().contains("y");
         previewParams.x = hasSavedPosition ? clamp(getPrefs().getInt("x", 0), 0, Math.max(0, screenWidth - width)) : Math.max(dp(8), screenWidth - width - dp(12));
