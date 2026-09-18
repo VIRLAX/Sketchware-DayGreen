@@ -5,15 +5,14 @@ import android.app.Application;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
-import android.text.Editable;
-import android.graphics.Color;
 import android.view.Gravity;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.EditText;
-import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -22,7 +21,6 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 
 import com.besome.sketch.beans.BlockBean;
-import com.besome.sketch.editor.LogicEditorActivity;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
@@ -32,49 +30,48 @@ import java.util.WeakHashMap;
 import a.a.a.Fx;
 import a.a.a.jC;
 import a.a.a.yq;
-import mod.hey.studios.util.Helper;
 import pro.sketchware.R;
 
-/**
- * Adds a small, non-invasive Java bridge to the existing event editor.
- * The legacy block renderer remains the source of truth; imported blocks are persisted
- * through the existing project data manager and then reloaded by the activity.
- */
+/** Adds the Java bridge and live status to every Logic Editor event activity. */
 final class LogicEditorEnhancer implements Application.ActivityLifecycleCallbacks {
     private static final long POLL_MS = 650L;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Map<LogicEditorActivity, State> states = new WeakHashMap<>();
+    private final Map<com.besome.sketch.editor.LogicEditorActivity, State> states = new WeakHashMap<>();
 
     @Override public void onActivityCreated(@NonNull Activity activity, Bundle savedInstanceState) {
-        if (activity instanceof LogicEditorActivity editor) attach(editor);
+        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) attach(editor);
     }
 
-    private void attach(LogicEditorActivity activity) {
+    private void attach(com.besome.sketch.editor.LogicEditorActivity activity) {
         if (states.containsKey(activity)) return;
         View toolbarView = activity.findViewById(R.id.toolbar);
         if (!(toolbarView instanceof androidx.appcompat.widget.Toolbar toolbar)) return;
 
         State state = new State(activity, toolbar, toolbar.getSubtitle() == null ? "" : toolbar.getSubtitle().toString());
         states.put(activity, state);
-
-        ImageButton button = new ImageButton(activity);
-        button.setImageResource(R.drawable.ic_mtrl_code);
-        button.setContentDescription("Convert Java code to blocks");
-        button.setBackgroundColor(Color.TRANSPARENT);
-        button.setColorFilter(Color.WHITE);
-        button.setPadding(dp(activity, 10), dp(activity, 10), dp(activity, 10), dp(activity, 10));
-        androidx.appcompat.widget.Toolbar.LayoutParams params = new androidx.appcompat.widget.Toolbar.LayoutParams(dp(activity, 48), dp(activity, 48), Gravity.END);
-        toolbar.addView(button, params);
-        button.setOnClickListener(v -> showJavaBridge(state));
-
         state.poll = new Runnable() {
             @Override public void run() {
                 if (!states.containsKey(activity) || activity.isFinishing()) return;
+                ensureJavaBridgeMenu(state);
                 updateStatus(state);
                 handler.postDelayed(this, POLL_MS);
             }
         };
-        handler.postDelayed(state.poll, 900L);
+        handler.postDelayed(state.poll, 250L);
+    }
+
+    private void ensureJavaBridgeMenu(State state) {
+        Menu menu = state.toolbar.getMenu();
+        if (menu.findItem(state.menuId) != null) return;
+        menu.add(Menu.NONE, state.menuId, 90, "Java to Blocks")
+                .setIcon(R.drawable.ic_mtrl_java)
+                .setContentDescription("Convert Java code to blocks")
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+                .setOnMenuItemClickListener(item -> {
+                    showJavaBridge(state);
+                    return true;
+                });
+        state.toolbar.invalidate();
     }
 
     private void updateStatus(State state) {
@@ -101,7 +98,7 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     }
 
     private void showJavaBridge(State state) {
-        LogicEditorActivity activity = state.activity;
+        com.besome.sketch.editor.LogicEditorActivity activity = state.activity;
         EditText editor = new EditText(activity);
         editor.setMinLines(12);
         editor.setGravity(Gravity.TOP | Gravity.START);
@@ -121,7 +118,7 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
         content.addView(editor, new LinearLayout.LayoutParams(-1, 0, 1));
 
         AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
-                .setTitle("Java → Blocks")
+                .setTitle("Java to Blocks")
                 .setMessage("Supported: View setters, text, visibility, state, alpha, transforms, and Toast. Unsupported statements stay untouched.")
                 .setView(content)
                 .setNegativeButton("Cancel", null)
@@ -167,7 +164,7 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
         dialog.show();
     }
 
-    private static String buildSource(LogicEditorActivity activity) {
+    private static String buildSource(com.besome.sketch.editor.LogicEditorActivity activity) {
         try {
             yq project = new yq(activity, activity.scId);
             project.a(jC.c(activity.scId), jC.b(activity.scId), jC.a(activity.scId));
@@ -192,11 +189,12 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) { }
 
     private static final class State {
-        final LogicEditorActivity activity;
+        final com.besome.sketch.editor.LogicEditorActivity activity;
         final androidx.appcompat.widget.Toolbar toolbar;
         final String baseSubtitle;
+        final int menuId = View.generateViewId();
         Runnable poll;
-        State(LogicEditorActivity activity, androidx.appcompat.widget.Toolbar toolbar, String baseSubtitle) {
+        State(com.besome.sketch.editor.LogicEditorActivity activity, androidx.appcompat.widget.Toolbar toolbar, String baseSubtitle) {
             this.activity = activity;
             this.toolbar = toolbar;
             this.baseSubtitle = baseSubtitle;
