@@ -20,10 +20,8 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 
-import com.besome.sketch.beans.BlockBean;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -63,14 +61,14 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     private void ensureJavaBridgeMenu(State state) {
         Menu menu = state.toolbar.getMenu();
         if (menu.findItem(state.menuId) != null) return;
-        menu.add(Menu.NONE, state.menuId, 90, "Java to Blocks")
-                .setIcon(R.drawable.ic_mtrl_java)
-                .setContentDescription("Convert Java code to blocks")
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-                .setOnMenuItemClickListener(item -> {
-                    showJavaBridge(state);
-                    return true;
-                });
+        MenuItem item = menu.add(Menu.NONE, state.menuId, 90, "Java to Blocks");
+        item.setIcon(R.drawable.ic_mtrl_java);
+        item.setContentDescription("Convert Java code to blocks");
+        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        item.setOnMenuItemClickListener(clickedItem -> {
+            showJavaBridge(state);
+            return true;
+        });
         state.toolbar.invalidate();
     }
 
