@@ -23,18 +23,20 @@ import java.util.List;
 
 import a.a.a.kq;
 
-/** Conservative Java-to-block bridge. It imports only statements with a known Sketchware opcode. */
+/** Java-to-block bridge. Known statements become native blocks; everything else is preserved as raw Java. */
 public final class JavaToBlockBridge {
+    private static final String RAW_SPEC = "add source directly %s.inputOnly";
+
     private JavaToBlockBridge() { }
 
     public static Analysis analyze(String source) {
         try {
             BlockStmt block = parseBody(source);
-            ArrayList<String> unsupported = new ArrayList<>();
+            ArrayList<String> preserved = new ArrayList<>();
             for (Statement statement : block.getStatements()) {
-                if (!toBean(statement, 1).isPresent()) unsupported.add(statement.toString());
+                if (!toNativeBean(statement, 1).isPresent()) preserved.add(statement.toString());
             }
-            return new Analysis(true, 0, 0, "", unsupported);
+            return new Analysis(true, 0, 0, "", preserved);
         } catch (Throwable error) {
             int line = 1;
             int column = 1;
@@ -60,19 +62,22 @@ public final class JavaToBlockBridge {
             BlockStmt body = parseBody(source);
             int nextId = 1;
             for (Statement statement : body.getStatements()) {
-                java.util.Optional<BlockBean> bean = toBean(statement, nextId);
-                if (bean.isPresent()) {
-                    blocks.add(bean.get());
-                    nextId++;
-                }
+                java.util.Optional<BlockBean> bean = toNativeBean(statement, nextId);
+                if (!bean.isPresent()) bean = java.util.Optional.of(rawBean(statement, nextId));
+                blocks.add(bean.get());
+                nextId++;
             }
-            for (int i = 0; i + 1 < blocks.size(); i++) {
-                blocks.get(i).nextBlock = Integer.parseInt(blocks.get(i + 1).id);
-            }
-        } catch (Throwable ignored) {
-            return new ImportResult(new Analysis(false, 1, 1, "Unable to convert this Java body", Collections.emptyList()), blocks);
+            linkNext(blocks);
+        } catch (Throwable error) {
+            return new ImportResult(new Analysis(false, 1, 1, "Unable to convert this Java body: " + clean(error.getMessage()), Collections.emptyList()), blocks);
         }
         return new ImportResult(analysis, blocks);
+    }
+
+    private static void linkNext(ArrayList<BlockBean> blocks) {
+        for (int i = 0; i + 1 < blocks.size(); i++) {
+            blocks.get(i).nextBlock = Integer.parseInt(blocks.get(i + 1).id);
+        }
     }
 
     private static BlockStmt parseBody(String source) {
@@ -81,7 +86,7 @@ public final class JavaToBlockBridge {
         return StaticJavaParser.parseBlock("{\n" + text + "\n}");
     }
 
-    private static java.util.Optional<BlockBean> toBean(Statement statement, int id) {
+    private static java.util.Optional<BlockBean> toNativeBean(Statement statement, int id) {
         if (!(statement instanceof ExpressionStmt expressionStmt)) return java.util.Optional.empty();
         Expression expression = expressionStmt.getExpression();
         if (!(expression instanceof MethodCallExpr call)) return java.util.Optional.empty();
@@ -122,12 +127,18 @@ public final class JavaToBlockBridge {
             args.add(0, new NameExpr(scope));
         }
 
-        int expected = specTypes(spec).size();
-        if (args.size() != expected) return java.util.Optional.empty();
+        if (args.size() != specTypes(spec).size()) return java.util.Optional.empty();
         BlockBean bean = new BlockBean(String.valueOf(id), spec, type, "", opcode);
         for (Expression arg : args) bean.parameters.add(parameterValue(arg));
         bean.color = kq.a(opcode, type);
         return java.util.Optional.of(bean);
+    }
+
+    private static BlockBean rawBean(Statement statement, int id) {
+        BlockBean bean = new BlockBean(String.valueOf(id), RAW_SPEC, " ", "", "addSourceDirectly");
+        bean.parameters.add(statement.toString());
+        bean.color = kq.a("addSourceDirectly", " ");
+        return bean;
     }
 
     private static List<String> specTypes(String spec) {
@@ -165,6 +176,7 @@ public final class JavaToBlockBridge {
         public final int line;
         public final int column;
         public final String message;
+        /** Statements preserved as raw Java source blocks, not discarded. */
         public final List<String> unsupported;
         Analysis(boolean valid, int line, int column, String message, List<String> unsupported) {
             this.valid = valid;
