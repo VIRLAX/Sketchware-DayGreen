@@ -41,9 +41,12 @@ public final class JavaToBlockBridge {
             if (error instanceof com.github.javaparser.ParseProblemException parseError
                     && !parseError.getProblems().isEmpty()
                     && parseError.getProblems().get(0).getLocation().isPresent()) {
-                var position = parseError.getProblems().get(0).getLocation().get().getBegin();
-                line = position.getLine();
-                column = position.getColumn();
+                var token = parseError.getProblems().get(0).getLocation().get().getBegin();
+                var range = token.getRange().orElse(null);
+                if (range != null) {
+                    line = range.begin.line;
+                    column = range.begin.column;
+                }
             }
             return new Analysis(false, line, column, clean(error.getMessage()), Collections.emptyList());
         }
