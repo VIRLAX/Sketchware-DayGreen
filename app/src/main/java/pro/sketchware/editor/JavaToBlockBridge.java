@@ -23,14 +23,7 @@ import java.util.List;
 
 import a.a.a.kq;
 
-/**
- * Converts Java event bodies to Sketchware blocks without silently dropping code.
- *
- * Native mappings are used where their exact Sketchware block is known. Every
- * other valid Java statement is deliberately emitted as an addSourceDirectly
- * block. This is important: valid Java must still be visible and editable in
- * the block editor even when a native block does not exist for it yet.
- */
+/** Converts Java event bodies to Sketchware blocks without silently dropping code. */
 public final class JavaToBlockBridge {
     private static final String RAW_SPEC = "add source directly %s.inputOnly";
 
@@ -41,9 +34,7 @@ public final class JavaToBlockBridge {
             BlockStmt block = parseBody(source);
             ArrayList<String> preserved = new ArrayList<>();
             for (Statement statement : block.getStatements()) {
-                if (!toNativeBean(statement, 1).isPresent()) {
-                    preserved.add(statement.toString());
-                }
+                if (!toNativeBean(statement, 1).isPresent()) preserved.add(statement.toString());
             }
             return new Analysis(true, 0, 0, "", preserved);
         } catch (Throwable error) {
@@ -66,21 +57,16 @@ public final class JavaToBlockBridge {
     public static ImportResult toBlocks(String source) {
         Analysis analysis = analyze(source);
         if (!analysis.valid) return new ImportResult(analysis, new ArrayList<>());
-
         ArrayList<BlockBean> blocks = new ArrayList<>();
         try {
             BlockStmt body = parseBody(source);
             int nextId = 1;
             for (Statement statement : body.getStatements()) {
-                // Unsupported does not mean discarded. Keep it as a real block.
-                java.util.Optional<BlockBean> bean = toNativeBean(statement, nextId);
-                blocks.add(bean.orElseGet(() -> rawBean(statement, nextId)));
+                java.util.Optional<BlockBean> nativeBean = toNativeBean(statement, nextId);
+                BlockBean bean = nativeBean.isPresent() ? nativeBean.get() : rawBean(statement, nextId);
+                blocks.add(bean);
                 nextId++;
             }
-
-            // A non-empty input must never result in the misleading "no
-            // supported statements" result. This also preserves comments or
-            // parser edge cases as one editable source block.
             if (blocks.isEmpty() && source != null && !source.trim().isEmpty()) {
                 blocks.add(rawBeanText(source.trim(), nextId));
             }
@@ -145,7 +131,6 @@ public final class JavaToBlockBridge {
             if (scope.isEmpty()) return java.util.Optional.empty();
             args.add(0, new NameExpr(scope));
         }
-
         if (args.size() != specTypes(spec).size()) return java.util.Optional.empty();
         BlockBean bean = new BlockBean(String.valueOf(id), spec, type, "", opcode);
         for (Expression arg : args) bean.parameters.add(parameterValue(arg));
@@ -153,9 +138,7 @@ public final class JavaToBlockBridge {
         return java.util.Optional.of(bean);
     }
 
-    private static BlockBean rawBean(Statement statement, int id) {
-        return rawBeanText(statement.toString(), id);
-    }
+    private static BlockBean rawBean(Statement statement, int id) { return rawBeanText(statement.toString(), id); }
 
     private static BlockBean rawBeanText(String source, int id) {
         BlockBean bean = new BlockBean(String.valueOf(id), RAW_SPEC, " ", "", "addSourceDirectly");
@@ -201,20 +184,13 @@ public final class JavaToBlockBridge {
         public final String message;
         public final List<String> unsupported;
         Analysis(boolean valid, int line, int column, String message, List<String> unsupported) {
-            this.valid = valid;
-            this.line = line;
-            this.column = column;
-            this.message = message;
-            this.unsupported = unsupported;
+            this.valid = valid; this.line = line; this.column = column; this.message = message; this.unsupported = unsupported;
         }
     }
 
     public static final class ImportResult {
         public final Analysis analysis;
         public final ArrayList<BlockBean> blocks;
-        ImportResult(Analysis analysis, ArrayList<BlockBean> blocks) {
-            this.analysis = analysis;
-            this.blocks = blocks;
-        }
+        ImportResult(Analysis analysis, ArrayList<BlockBean> blocks) { this.analysis = analysis; this.blocks = blocks; }
     }
 }
