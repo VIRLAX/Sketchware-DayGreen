@@ -18,7 +18,6 @@ import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.stmt.Statement;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -101,7 +100,7 @@ public final class JavaToBlockBridge {
             switch (method) {
                 case "setText" -> spec = "%m.view setText %s";
                 case "setEnabled" -> { opcode = "setEnable"; spec = "%m.view setEnable %b"; }
-                case "setVisibility" -> { opcode = "setVisible"; spec = "%m.view setVisible %s"; }
+                case "setVisibility" -> { opcode = "setVisible"; spec = "%m.view setVisible %m.visibility"; }
                 case "setAlpha" -> spec = "%m.view setAlpha %d";
                 case "setRotation" -> { opcode = "setRotate"; spec = "%m.view setRotate %d"; }
                 case "setTranslationX" -> spec = "%m.view setTranslationX %d";
