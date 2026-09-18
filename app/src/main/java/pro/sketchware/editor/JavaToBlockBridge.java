@@ -23,7 +23,14 @@ import java.util.List;
 
 import a.a.a.kq;
 
-/** Java-to-block bridge. Known statements become native blocks; everything else is preserved as raw Java. */
+/**
+ * Converts Java event bodies to Sketchware blocks without silently dropping code.
+ *
+ * Native mappings are used where their exact Sketchware block is known. Every
+ * other valid Java statement is deliberately emitted as an addSourceDirectly
+ * block. This is important: valid Java must still be visible and editable in
+ * the block editor even when a native block does not exist for it yet.
+ */
 public final class JavaToBlockBridge {
     private static final String RAW_SPEC = "add source directly %s.inputOnly";
 
@@ -34,7 +41,9 @@ public final class JavaToBlockBridge {
             BlockStmt block = parseBody(source);
             ArrayList<String> preserved = new ArrayList<>();
             for (Statement statement : block.getStatements()) {
-                if (!toNativeBean(statement, 1).isPresent()) preserved.add(statement.toString());
+                if (!toNativeBean(statement, 1).isPresent()) {
+                    preserved.add(statement.toString());
+                }
             }
             return new Analysis(true, 0, 0, "", preserved);
         } catch (Throwable error) {
@@ -57,19 +66,29 @@ public final class JavaToBlockBridge {
     public static ImportResult toBlocks(String source) {
         Analysis analysis = analyze(source);
         if (!analysis.valid) return new ImportResult(analysis, new ArrayList<>());
+
         ArrayList<BlockBean> blocks = new ArrayList<>();
         try {
             BlockStmt body = parseBody(source);
             int nextId = 1;
             for (Statement statement : body.getStatements()) {
+                // Unsupported does not mean discarded. Keep it as a real block.
                 java.util.Optional<BlockBean> bean = toNativeBean(statement, nextId);
-                if (!bean.isPresent()) bean = java.util.Optional.of(rawBean(statement, nextId));
-                blocks.add(bean.get());
+                blocks.add(bean.orElseGet(() -> rawBean(statement, nextId)));
                 nextId++;
+            }
+
+            // A non-empty input must never result in the misleading "no
+            // supported statements" result. This also preserves comments or
+            // parser edge cases as one editable source block.
+            if (blocks.isEmpty() && source != null && !source.trim().isEmpty()) {
+                blocks.add(rawBeanText(source.trim(), nextId));
             }
             linkNext(blocks);
         } catch (Throwable error) {
-            return new ImportResult(new Analysis(false, 1, 1, "Unable to convert this Java body: " + clean(error.getMessage()), Collections.emptyList()), blocks);
+            return new ImportResult(new Analysis(false, 1, 1,
+                    "Unable to convert this Java body: " + clean(error.getMessage()),
+                    Collections.emptyList()), blocks);
         }
         return new ImportResult(analysis, blocks);
     }
@@ -135,8 +154,12 @@ public final class JavaToBlockBridge {
     }
 
     private static BlockBean rawBean(Statement statement, int id) {
+        return rawBeanText(statement.toString(), id);
+    }
+
+    private static BlockBean rawBeanText(String source, int id) {
         BlockBean bean = new BlockBean(String.valueOf(id), RAW_SPEC, " ", "", "addSourceDirectly");
-        bean.parameters.add(statement.toString());
+        bean.parameters.add(source);
         bean.color = kq.a("addSourceDirectly", " ");
         return bean;
     }
@@ -176,7 +199,6 @@ public final class JavaToBlockBridge {
         public final int line;
         public final int column;
         public final String message;
-        /** Statements preserved as raw Java source blocks, not discarded. */
         public final List<String> unsupported;
         Analysis(boolean valid, int line, int column, String message, List<String> unsupported) {
             this.valid = valid;
