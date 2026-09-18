@@ -20,10 +20,8 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 
-import com.besome.sketch.beans.BlockBean;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -39,7 +37,15 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     private final Map<com.besome.sketch.editor.LogicEditorActivity, State> states = new WeakHashMap<>();
 
     @Override public void onActivityCreated(@NonNull Activity activity, Bundle savedInstanceState) {
-        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) attach(editor);
+        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) {
+            handler.post(() -> attach(editor));
+        }
+    }
+
+    @Override public void onActivityResumed(@NonNull Activity activity) {
+        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) {
+            attach(editor);
+        }
     }
 
     private void attach(com.besome.sketch.editor.LogicEditorActivity activity) {
@@ -63,14 +69,14 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     private void ensureJavaBridgeMenu(State state) {
         Menu menu = state.toolbar.getMenu();
         if (menu.findItem(state.menuId) != null) return;
-        menu.add(Menu.NONE, state.menuId, 90, "Java to Blocks")
-                .setIcon(R.drawable.ic_mtrl_java)
-                .setContentDescription("Convert Java code to blocks")
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-                .setOnMenuItemClickListener(item -> {
-                    showJavaBridge(state);
-                    return true;
-                });
+        MenuItem item = menu.add(Menu.NONE, state.menuId, 90, "Java to Blocks");
+        item.setIcon(R.drawable.ic_mtrl_java);
+        item.setContentDescription("Convert Java code to blocks");
+        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        item.setOnMenuItemClickListener(clickedItem -> {
+            showJavaBridge(state);
+            return true;
+        });
         state.toolbar.invalidate();
     }
 
@@ -183,7 +189,6 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
         if (state != null && state.poll != null) handler.removeCallbacks(state.poll);
     }
     @Override public void onActivityStarted(@NonNull Activity activity) { }
-    @Override public void onActivityResumed(@NonNull Activity activity) { }
     @Override public void onActivityPaused(@NonNull Activity activity) { }
     @Override public void onActivityStopped(@NonNull Activity activity) { }
     @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) { }
