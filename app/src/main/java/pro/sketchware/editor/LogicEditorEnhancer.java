@@ -12,6 +12,7 @@ import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -43,9 +44,7 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     }
 
     @Override public void onActivityResumed(@NonNull Activity activity) {
-        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) {
-            attach(editor);
-        }
+        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) attach(editor);
     }
 
     private void attach(com.besome.sketch.editor.LogicEditorActivity activity) {
@@ -53,7 +52,18 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
         View toolbarView = activity.findViewById(R.id.toolbar);
         if (!(toolbarView instanceof androidx.appcompat.widget.Toolbar toolbar)) return;
 
-        State state = new State(activity, toolbar, toolbar.getSubtitle() == null ? "" : toolbar.getSubtitle().toString());
+        TextView statusView = new TextView(activity);
+        statusView.setTextSize(11);
+        statusView.setMaxLines(3);
+        statusView.setGravity(Gravity.CENTER_VERTICAL);
+        statusView.setPadding(dp(activity, 12), dp(activity, 4), dp(activity, 12), dp(activity, 4));
+        statusView.setTextColor(0xFF8BE28B);
+        statusView.setText("Blocks syntax: checking…");
+        ViewGroup parent = (ViewGroup) toolbar.getParent();
+        int toolbarIndex = parent.indexOfChild(toolbar);
+        parent.addView(statusView, toolbarIndex + 1, new ViewGroup.LayoutParams(-1, -2));
+
+        State state = new State(activity, toolbar, statusView, toolbar.getSubtitle() == null ? "" : toolbar.getSubtitle().toString());
         states.put(activity, state);
         state.poll = new Runnable() {
             @Override public void run() {
@@ -84,22 +94,30 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
         try {
             String source = buildSource(state.activity);
             JavaToBlockBridge.Analysis analysis = JavaToBlockBridge.analyze(source);
-            String suffix;
+            String subtitle;
+            String banner;
             int color;
             if (!analysis.valid) {
-                suffix = "  •  ✕ Java syntax error at line " + analysis.line;
+                subtitle = "  •  ✕ Java syntax error at line " + analysis.line;
+                banner = "✕ Blocks syntax error at line " + analysis.line + ", column " + analysis.column + ": " + analysis.message;
                 color = 0xFFFF6B6B;
             } else if (!analysis.unsupported.isEmpty()) {
-                suffix = "  •  ⚠ Syntax valid, " + analysis.unsupported.size() + " unsupported";
+                subtitle = "  •  ⚠ Syntax valid, " + analysis.unsupported.size() + " unsupported";
+                banner = "⚠ Syntax valid, but " + analysis.unsupported.size() + " block statement(s) are unsupported by the Java generator";
                 color = 0xFFFFC857;
             } else {
-                suffix = "  •  ✓ Blocks valid";
+                subtitle = "  •  ✓ Blocks valid";
+                banner = "✓ Blocks syntax valid";
                 color = 0xFF8BE28B;
             }
-            state.toolbar.setSubtitle(state.baseSubtitle + suffix);
+            state.toolbar.setSubtitle(state.baseSubtitle + subtitle);
             state.toolbar.setSubtitleTextColor(color);
-        } catch (Throwable ignored) {
+            state.statusView.setText(banner);
+            state.statusView.setTextColor(color);
+        } catch (Throwable error) {
             state.toolbar.setSubtitle(state.baseSubtitle + "  •  … Checking blocks");
+            state.statusView.setText("… Syntax check unavailable: " + error.getClass().getSimpleName());
+            state.statusView.setTextColor(0xFFFFC857);
         }
     }
 
@@ -196,12 +214,14 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     private static final class State {
         final com.besome.sketch.editor.LogicEditorActivity activity;
         final androidx.appcompat.widget.Toolbar toolbar;
+        final TextView statusView;
         final String baseSubtitle;
         final int menuId = View.generateViewId();
         Runnable poll;
-        State(com.besome.sketch.editor.LogicEditorActivity activity, androidx.appcompat.widget.Toolbar toolbar, String baseSubtitle) {
+        State(com.besome.sketch.editor.LogicEditorActivity activity, androidx.appcompat.widget.Toolbar toolbar, TextView statusView, String baseSubtitle) {
             this.activity = activity;
             this.toolbar = toolbar;
+            this.statusView = statusView;
             this.baseSubtitle = baseSubtitle;
         }
     }
