@@ -13,6 +13,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -102,8 +103,8 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
                 banner = "✕ Blocks syntax error at line " + analysis.line + ", column " + analysis.column + ": " + analysis.message;
                 color = 0xFFFF6B6B;
             } else if (!analysis.unsupported.isEmpty()) {
-                subtitle = "  •  ⚠ Syntax valid, " + analysis.unsupported.size() + " unsupported";
-                banner = "⚠ Syntax valid, but " + analysis.unsupported.size() + " block statement(s) are unsupported by the Java generator";
+                subtitle = "  •  ⚠ Syntax valid, " + analysis.unsupported.size() + " raw Java block(s)";
+                banner = "⚠ Syntax valid. " + analysis.unsupported.size() + " statement(s) will be preserved as raw Java blocks";
                 color = 0xFFFFC857;
             } else {
                 subtitle = "  •  ✓ Blocks valid";
@@ -124,9 +125,10 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     private void showJavaBridge(State state) {
         com.besome.sketch.editor.LogicEditorActivity activity = state.activity;
         EditText editor = new EditText(activity);
-        editor.setMinLines(12);
+        editor.setMinLines(24);
         editor.setGravity(Gravity.TOP | Gravity.START);
         editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        editor.setHorizontallyScrolling(false);
         editor.setText(buildSource(activity));
         editor.setSelection(editor.length());
 
@@ -142,23 +144,23 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
         content.addView(editor, new LinearLayout.LayoutParams(-1, 0, 1));
 
         AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
-                .setTitle("Java to Blocks")
-                .setMessage("Supported: View setters, text, visibility, state, alpha, transforms, and Toast. Unsupported statements stay untouched.")
+                .setTitle("Direct Java Editor")
+                .setMessage("Edit the complete event body. Native statements become normal blocks; unsupported statements are preserved as raw Java blocks, so conversion never silently drops code.")
                 .setView(content)
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Convert", null)
+                .setPositiveButton("Convert and install", null)
                 .create();
 
         Runnable refresh = () -> {
             JavaToBlockBridge.Analysis result = JavaToBlockBridge.analyze(editor.getText().toString());
             if (!result.valid) {
-                status.setText("✕ Syntax error at line " + result.line + ": " + result.message);
+                status.setText("✕ Syntax error at line " + result.line + ", column " + result.column + ": " + result.message);
                 status.setTextColor(0xFFFF6B6B);
             } else if (!result.unsupported.isEmpty()) {
-                status.setText("⚠ Syntax valid, " + result.unsupported.size() + " statement(s) will be skipped");
+                status.setText("⚠ Syntax valid. " + result.unsupported.size() + " statement(s) will be preserved as raw Java blocks");
                 status.setTextColor(0xFFFFC857);
             } else {
-                status.setText("✓ Syntax valid, ready to create blocks");
+                status.setText("✓ Syntax valid, ready to install blocks");
                 status.setTextColor(0xFF8BE28B);
             }
         };
@@ -168,6 +170,11 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
             @Override public void afterTextChanged(Editable s) { }
         });
         dialog.setOnShowListener(ignored -> {
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            }
             refresh.run();
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                 JavaToBlockBridge.ImportResult result = JavaToBlockBridge.toBlocks(editor.getText().toString());
@@ -177,10 +184,11 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
                     return;
                 }
                 if (result.blocks.isEmpty()) {
-                    Toast.makeText(activity, "No supported statements found", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(activity, "No statements found", Toast.LENGTH_SHORT).show();
                     return;
                 }
                 jC.a(activity.scId).a(activity.M.getJavaName(), activity.id + "_" + activity.eventName, result.blocks);
+                jC.a(activity.scId).h();
                 dialog.dismiss();
                 activity.recreate();
             });
