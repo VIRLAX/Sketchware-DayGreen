@@ -2,7 +2,7 @@ package pro.sketchware.editor;
 
 import com.besome.sketch.beans.BlockBean;
 import com.github.javaparser.StaticJavaParser;
-import com.github.javaparser.ast.expr.BlockStmt;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.Statement;
 
 import java.util.ArrayList;
@@ -80,9 +80,6 @@ public final class JavaToBlockBridge {
     }
 
     private static BlockBean rawBean(String source, int id) {
-        // This exact block is registered by BlocksHandler. Do not use a
-        // guessed opcode/spec pair here: an unknown pair is why blocks were
-        // saved successfully but disappeared after LogicEditorActivity reload.
         BlockBean bean = new BlockBean(String.valueOf(id), RAW_SPEC, " ", "", "addSourceDirectly");
         bean.parameters.add(source);
         bean.color = kq.a("addSourceDirectly", " ");
@@ -100,7 +97,6 @@ public final class JavaToBlockBridge {
         public final int line;
         public final int column;
         public final String message;
-        /** Valid statements that will be installed as visible Java blocks. */
         public final java.util.List<String> unsupported;
 
         Analysis(boolean valid, int line, int column, String message, java.util.List<String> unsupported) {
