@@ -41,9 +41,9 @@ public final class JavaToBlockBridge {
             if (error instanceof com.github.javaparser.ParseProblemException parseError
                     && !parseError.getProblems().isEmpty()
                     && parseError.getProblems().get(0).getLocation().isPresent()) {
-                var location = parseError.getProblems().get(0).getLocation().get().getBegin();
-                line = location.line;
-                column = location.column;
+                var position = parseError.getProblems().get(0).getLocation().get().getBegin();
+                line = position.getLine();
+                column = position.getColumn();
             }
             return new Analysis(false, line, column, clean(error.getMessage()), Collections.emptyList());
         }
@@ -136,7 +136,7 @@ public final class JavaToBlockBridge {
 
     private static String parameterValue(Expression expression) {
         if (expression instanceof StringLiteralExpr value) return value.asString();
-        if (expression instanceof CharLiteralExpr value) return value.asString();
+        if (expression instanceof CharLiteralExpr value) return value.getValue();
         if (expression instanceof BooleanLiteralExpr value) return value.getValue() ? "true" : "false";
         if (expression instanceof IntegerLiteralExpr value) return value.getValue().replace("_", "");
         if (expression instanceof DoubleLiteralExpr value) return value.getValue().replace("_", "");
