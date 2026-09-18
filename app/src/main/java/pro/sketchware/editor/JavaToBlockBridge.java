@@ -99,13 +99,16 @@ public final class JavaToBlockBridge {
         String method = call.getNameAsString();
         String opcode = method;
         String spec;
-        String type = "v";
+        // Sketchware command blocks use a blank block type. The previous
+        // implementation used "v", which describes a value socket rather
+        // than the command block itself; the editor then could not inflate
+        // the persisted BlockBean and the event appeared empty after reload.
+        String type = " ";
         List<Expression> args = new ArrayList<>(call.getArguments());
         String scope = call.getScope().map(Node::toString).orElse("");
 
         if ("showMessage".equals(method) && "SketchwareUtil".equals(scope)) {
             opcode = "doToast";
-            type = "p";
             spec = "%s";
             if (args.size() == 2) args = new ArrayList<>(args.subList(1, 2));
         } else {
