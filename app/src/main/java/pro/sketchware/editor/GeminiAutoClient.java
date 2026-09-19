@@ -71,7 +71,15 @@ public final class GeminiAutoClient {
             @Override public void onFailure(Call call, IOException e) { listener.onError(0, message(e), "", ""); }
             @Override public void onResponse(Call call, Response response) {
                 String remaining = response.header("x-ratelimit-remaining", ""); String retry = response.header("retry-after", "");
-                if (!response.isSuccessful()) { try (Response ignored = response) { String body = ignored.body() == null ? "" : ignored.body().string(); listener.onError(ignored.code(), error(body, ignored.code()), remaining, retry); } return; }
+                if (!response.isSuccessful()) {
+                    try (Response ignored = response) {
+                        String body = ignored.body() == null ? "" : ignored.body().string();
+                        listener.onError(ignored.code(), error(body, ignored.code()), remaining, retry);
+                    } catch (IOException e) {
+                        listener.onError(500, error(e.getMessage(), 500), remaining, retry);
+                    }
+                    return;
+                }
                 Usage[] usage = {new Usage(0, 0, 0)};
                 try (Response ignored = response) {
                     BufferedSource source = ignored.body().source();
