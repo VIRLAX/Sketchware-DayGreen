@@ -2,6 +2,7 @@ package pro.sketchware.editor;
 
 import android.app.Activity;
 import android.app.Application;
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -25,6 +26,7 @@ import androidx.appcompat.app.AlertDialog;
 import com.besome.sketch.beans.BlockBean;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -32,9 +34,12 @@ import java.util.WeakHashMap;
 import a.a.a.Fx;
 import a.a.a.jC;
 import a.a.a.yq;
+import mod.hey.studios.code.SrcCodeEditor;
 import pro.sketchware.R;
+import pro.sketchware.utility.FilePathUtil;
+import pro.sketchware.utility.FileUtil;
 
-/** Adds the Java bridge and live status to every Logic Editor event activity. */
+/** Adds the reference-style generated Java editor and the guarded event bridge. */
 final class LogicEditorEnhancer implements Application.ActivityLifecycleCallbacks {
     private static final long POLL_MS = 650L;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -42,9 +47,7 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     private final Map<com.besome.sketch.editor.LogicEditorActivity, PendingImport> pendingImports = new WeakHashMap<>();
 
     @Override public void onActivityCreated(@NonNull Activity activity, Bundle savedInstanceState) {
-        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) {
-            handler.post(() -> attach(editor));
-        }
+        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) handler.post(() -> attach(editor));
     }
 
     @Override public void onActivityResumed(@NonNull Activity activity) {
@@ -82,29 +85,37 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
 
     private void ensureJavaBridgeMenu(State state) {
         Menu menu = state.toolbar.getMenu();
-        if (menu.findItem(state.menuId) != null) return;
-        MenuItem item = menu.add(Menu.NONE, state.menuId, 90, "Java to Blocks");
-        item.setIcon(R.drawable.ic_mtrl_java);
-        item.setContentDescription("Convert Java code to blocks");
-        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-        item.setOnMenuItemClickListener(clickedItem -> {
-            showJavaBridge(state);
-            return true;
-        });
+        if (menu.findItem(state.menuId) == null) {
+            MenuItem item = menu.add(Menu.NONE, state.menuId, 90, "Java to Blocks");
+            item.setIcon(R.drawable.ic_mtrl_java);
+            item.setContentDescription("Convert event Java body to blocks");
+            item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+            item.setOnMenuItemClickListener(clickedItem -> { showJavaBridge(state); return true; });
+        }
+        if (menu.findItem(state.classMenuId) == null) {
+            MenuItem item = menu.add(Menu.NONE, state.classMenuId, 91, "Edit generated Java class");
+            item.setIcon(R.drawable.ic_mtrl_code);
+            item.setContentDescription("Edit the generated Java class");
+            item.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+            item.setOnMenuItemClickListener(clickedItem -> { showGeneratedJavaEditor(state.activity); return true; });
+        }
         state.toolbar.invalidate();
     }
 
     private void updateStatus(State state) {
         try {
-            String source = buildSource(state.activity);
-            JavaToBlockBridge.Analysis analysis = JavaToBlockBridge.analyze(source);
+            JavaToBlockBridge.Analysis analysis = JavaToBlockBridge.analyze(buildSource(state.activity));
+            int color;
             String subtitle;
             String banner;
-            int color;
             if (!analysis.valid) {
                 subtitle = "  •  ✕ Java syntax error at line " + analysis.line;
                 banner = "✕ Blocks syntax error at line " + analysis.line + ", column " + analysis.column + ": " + analysis.message;
                 color = 0xFFFF6B6B;
+            } else if (analysis.fullSource) {
+                subtitle = "  •  ⚠ Generated Java class mode";
+                banner = "⚠ Full Java class detected. Use the toolbar menu: Edit generated Java class";
+                color = 0xFFFFC857;
             } else if (!analysis.unsupported.isEmpty()) {
                 subtitle = "  •  ⚠ Syntax valid, " + analysis.unsupported.size() + " raw Java block(s)";
                 banner = "⚠ Syntax valid. " + analysis.unsupported.size() + " statement(s) will be preserved as raw Java blocks";
@@ -139,7 +150,6 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
         status.setTextSize(12);
         status.setPadding(dp(activity, 4), dp(activity, 4), dp(activity, 4), dp(activity, 8));
         status.setTextColor(0xFF8BE28B);
-
         LinearLayout content = new LinearLayout(activity);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(activity, 20), dp(activity, 4), dp(activity, 20), 0);
@@ -147,8 +157,8 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
         content.addView(editor, new LinearLayout.LayoutParams(-1, 0, 1));
 
         AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
-                .setTitle("Direct Java Editor")
-                .setMessage("Edit the complete event body. Native statements become normal blocks; unsupported statements are preserved as raw Java blocks, so conversion never silently drops code.")
+                .setTitle("Java event body editor")
+                .setMessage("Paste only the statements for this event. For a complete public class, use Edit generated Java class so the existing blocks remain untouched.")
                 .setView(content)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Convert and install", null)
@@ -159,6 +169,9 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
             if (!result.valid) {
                 status.setText("✕ Syntax error at line " + result.line + ", column " + result.column + ": " + result.message);
                 status.setTextColor(0xFFFF6B6B);
+            } else if (result.fullSource) {
+                status.setText("⚠ Complete Java class detected. This will not touch blocks. Use Edit generated Java class.");
+                status.setTextColor(0xFFFFC857);
             } else if (!result.unsupported.isEmpty()) {
                 status.setText("⚠ Syntax valid. " + result.unsupported.size() + " statement(s) will be preserved as raw Java blocks");
                 status.setTextColor(0xFFFFC857);
@@ -180,39 +193,48 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
             }
             refresh.run();
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                JavaToBlockBridge.ImportResult result = JavaToBlockBridge.toBlocks(editor.getText().toString());
-                if (!result.analysis.valid) {
-                    refresh.run();
-                    Toast.makeText(activity, "Fix the Java syntax first", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                if (result.blocks.isEmpty()) {
-                    Toast.makeText(activity, "No statements found", Toast.LENGTH_SHORT).show();
-                    return;
-                }
+                JavaToBlockBridge.Analysis analysis = JavaToBlockBridge.analyze(editor.getText().toString());
+                if (!analysis.valid) { refresh.run(); Toast.makeText(activity, "Fix the Java syntax first", Toast.LENGTH_SHORT).show(); return; }
+                if (analysis.fullSource) { Toast.makeText(activity, "Use Edit generated Java class for a complete public class", Toast.LENGTH_LONG).show(); return; }
+                JavaToBlockBridge.ImportResult result = JavaToBlockBridge.toBlocks(editor.getText().toString(), Math.max(1, activity.o.g));
+                if (!result.analysis.valid || result.blocks.isEmpty()) { refresh.run(); Toast.makeText(activity, "No safe event blocks were created", Toast.LENGTH_SHORT).show(); return; }
 
-                PendingImport pending = new PendingImport(
-                        activity.scId,
-                        activity.M.getJavaName(),
-                        activity.id + "_" + activity.eventName,
-                        result.blocks
-                );
+                PendingImport pending = new PendingImport(activity.scId, activity.M.getJavaName(), activity.id + "_" + activity.eventName, result.blocks);
                 pendingImports.put(activity, pending);
                 persist(pending);
                 dialog.dismiss();
-                // The old canvas is still alive until recreate() saves it. The pending import is
-                // re-applied from onActivitySaveInstanceState after that stale canvas write, so
-                // the generated class and the reopened block editor read the same source of truth.
                 activity.getWindow().getDecorView().post(activity::recreate);
             });
         });
         dialog.show();
     }
 
+    /** Reference flow: generated class -> source override file -> SrcCodeEditor. */
+    private static void showGeneratedJavaEditor(com.besome.sketch.editor.LogicEditorActivity activity) {
+        try {
+            yq project = new yq(activity, activity.scId);
+            String generated = project.getFileSrc(activity.M.getJavaName(), jC.b(activity.scId), jC.a(activity.scId), jC.c(activity.scId));
+            String overridePath = new FilePathUtil().getPathJava(activity.scId)
+                    + File.separator + project.packageName.replace(".", File.separator)
+                    + File.separator + activity.M.getJavaName();
+            if (!FileUtil.isExistFile(overridePath)) {
+                File parent = new File(overridePath).getParentFile();
+                if (parent != null && !parent.exists()) FileUtil.makeDir(parent.getAbsolutePath());
+                FileUtil.writeFile(overridePath, generated);
+            }
+            Intent intent = new Intent(activity, SrcCodeEditor.class);
+            intent.putExtra("sc_id", activity.scId);
+            intent.putExtra("title", activity.M.getJavaName());
+            intent.putExtra("content", overridePath);
+            intent.putExtra("java", true);
+            activity.startActivity(intent);
+        } catch (Throwable error) {
+            Toast.makeText(activity, "Failed to open generated Java: " + error.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
     private static void persist(PendingImport pending) {
         jC.a(pending.scId).a(pending.javaName, pending.eventKey, pending.blocks);
-        // Reference Sketchware flushes eC with k(). h() is a load/init path and was the reason
-        // imported blocks could appear installed yet disappear when the generated class reloaded.
         jC.a(pending.scId).k();
     }
 
@@ -221,27 +243,19 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
             yq project = new yq(activity, activity.scId);
             project.a(jC.c(activity.scId), jC.b(activity.scId), jC.a(activity.scId));
             return new Fx(activity.M.getActivityName(), project.N, activity.o.getBlocks(), false).a();
-        } catch (Throwable error) {
-            return "";
-        }
+        } catch (Throwable error) { return ""; }
     }
 
-    private static int dp(Activity activity, int value) {
-        return (int) (value * activity.getResources().getDisplayMetrics().density + .5f);
-    }
+    private static int dp(Activity activity, int value) { return (int) (value * activity.getResources().getDisplayMetrics().density + .5f); }
 
     @Override public void onActivityDestroyed(@NonNull Activity activity) {
         State state = states.remove(activity);
         if (state != null && state.poll != null) handler.removeCallbacks(state.poll);
-        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity) {
-            pendingImports.remove(activity);
-        }
+        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity) pendingImports.remove(activity);
     }
-
     @Override public void onActivityStarted(@NonNull Activity activity) { }
     @Override public void onActivityPaused(@NonNull Activity activity) { }
     @Override public void onActivityStopped(@NonNull Activity activity) { }
-
     @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
         if (!(activity instanceof com.besome.sketch.editor.LogicEditorActivity editor)) return;
         PendingImport pending = pendingImports.remove(editor);
@@ -249,31 +263,16 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     }
 
     private static final class PendingImport {
-        final String scId;
-        final String javaName;
-        final String eventKey;
-        final ArrayList<BlockBean> blocks;
-
+        final String scId; final String javaName; final String eventKey; final ArrayList<BlockBean> blocks;
         PendingImport(String scId, String javaName, String eventKey, ArrayList<BlockBean> blocks) {
-            this.scId = scId;
-            this.javaName = javaName;
-            this.eventKey = eventKey;
-            this.blocks = blocks;
+            this.scId = scId; this.javaName = javaName; this.eventKey = eventKey; this.blocks = blocks;
         }
     }
-
     private static final class State {
-        final com.besome.sketch.editor.LogicEditorActivity activity;
-        final androidx.appcompat.widget.Toolbar toolbar;
-        final TextView statusView;
-        final String baseSubtitle;
-        final int menuId = View.generateViewId();
-        Runnable poll;
+        final com.besome.sketch.editor.LogicEditorActivity activity; final androidx.appcompat.widget.Toolbar toolbar; final TextView statusView; final String baseSubtitle;
+        final int menuId = View.generateViewId(); final int classMenuId = View.generateViewId(); Runnable poll;
         State(com.besome.sketch.editor.LogicEditorActivity activity, androidx.appcompat.widget.Toolbar toolbar, TextView statusView, String baseSubtitle) {
-            this.activity = activity;
-            this.toolbar = toolbar;
-            this.statusView = statusView;
-            this.baseSubtitle = baseSubtitle;
+            this.activity = activity; this.toolbar = toolbar; this.statusView = statusView; this.baseSubtitle = baseSubtitle;
         }
     }
 }

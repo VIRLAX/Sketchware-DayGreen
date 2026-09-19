@@ -1,19 +1,15 @@
 package pro.sketchware.editor;
 
-import android.app.Activity;
 import android.app.Application;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.Bundle;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.besome.sketch.editor.LogicEditorActivity;
-
-/** Installs the logic-editor enhancements without changing the legacy editor layout. */
+/** Installs the reference-style Java editor hooks without changing legacy layouts. */
 public final class LogicEditorFeatureProvider extends ContentProvider {
     private static boolean installed;
 
@@ -21,8 +17,9 @@ public final class LogicEditorFeatureProvider extends ContentProvider {
     public boolean onCreate() {
         if (!installed && getContext() != null) {
             installed = true;
-            ((Application) getContext().getApplicationContext())
-                    .registerActivityLifecycleCallbacks(new LogicEditorEnhancer());
+            Application application = (Application) getContext().getApplicationContext();
+            application.registerActivityLifecycleCallbacks(new LogicEditorEnhancer());
+            application.registerActivityLifecycleCallbacks(new DesignJavaEditorEnhancer());
         }
         return true;
     }
