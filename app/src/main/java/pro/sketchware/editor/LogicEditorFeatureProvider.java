@@ -9,7 +9,7 @@ import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-/** Installs the reference-style Java editor hooks without changing legacy layouts. */
+/** Installs editor and Agent hooks without changing the legacy activity layouts. */
 public final class LogicEditorFeatureProvider extends ContentProvider {
     private static boolean installed;
 
@@ -20,6 +20,7 @@ public final class LogicEditorFeatureProvider extends ContentProvider {
             Application application = (Application) getContext().getApplicationContext();
             application.registerActivityLifecycleCallbacks(new LogicEditorEnhancer());
             application.registerActivityLifecycleCallbacks(new DesignJavaEditorEnhancer());
+            application.registerActivityLifecycleCallbacks(new AgentTabEnhancer());
         }
         return true;
     }
