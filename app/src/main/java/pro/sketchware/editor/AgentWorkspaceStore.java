@@ -12,7 +12,6 @@ import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -75,9 +74,12 @@ public final class AgentWorkspaceStore {
         } catch (Exception ignored) { }
         if (list.isEmpty()) {
             String old = legacy.getApiKey();
-            if (!old.isEmpty()) {
-                Profile p = new Profile(); p.name = "Gemini 1"; p.key = old; list.add(p); saveProfiles(list);
-            }
+            Profile p = new Profile();
+            p.name = "Gemini 1";
+            p.key = old == null ? "" : old;
+            p.enabled = !p.key.isEmpty();
+            list.add(p);
+            saveProfiles(list);
         }
         return list;
     }
@@ -89,11 +91,17 @@ public final class AgentWorkspaceStore {
     }
 
     public synchronized void addProfile(String name) {
-        List<Profile> list = getProfiles(); Profile p = new Profile(); p.name = name == null || name.trim().isEmpty() ? "Gemini " + (list.size() + 1) : name.trim(); list.add(p); saveProfiles(list);
+        List<Profile> list = getProfiles();
+        Profile p = new Profile();
+        p.name = name == null || name.trim().isEmpty() ? "Gemini " + (list.size() + 1) : name.trim();
+        list.add(p);
+        saveProfiles(list);
     }
 
     public synchronized void removeProfile(String id) {
-        List<Profile> list = getProfiles(); list.removeIf(p -> p.id.equals(id)); saveProfiles(list);
+        List<Profile> list = getProfiles();
+        list.removeIf(p -> p.id.equals(id));
+        saveProfiles(list);
     }
 
     public synchronized Profile findProfile(String id) {
@@ -111,6 +119,7 @@ public final class AgentWorkspaceStore {
             }
         } catch (Exception ignored) { }
         list.sort((a, b) -> Long.compare(b.updated, a.updated));
+        normalizeEmptySessions(list);
         return list;
     }
 
@@ -118,13 +127,33 @@ public final class AgentWorkspaceStore {
         String id = prefs.getString(CURRENT, "");
         List<Session> sessions = getSessions();
         for (Session s : sessions) if (s.id.equals(id)) return s;
+        if (!sessions.isEmpty() && isBlank(sessions.get(0))) {
+            prefs.edit().putString(CURRENT, sessions.get(0).id).apply();
+            return sessions.get(0);
+        }
         Session created = newSession("New chat");
         prefs.edit().putString(CURRENT, created.id).apply();
         return created;
     }
 
     public synchronized Session newSession(String title) {
-        List<Session> sessions = getSessions(); Session s = new Session(); s.title = title == null || title.trim().isEmpty() ? "New chat" : title.trim(); s.created = s.updated = System.currentTimeMillis(); sessions.add(s); saveSessions(sessions); prefs.edit().putString(CURRENT, s.id).apply(); return s;
+        String requested = title == null || title.trim().isEmpty() ? "New chat" : title.trim();
+        List<Session> sessions = getSessions();
+        String currentId = prefs.getString(CURRENT, "");
+        if ("New chat".equals(requested)) {
+            for (Session s : sessions) if (s.id.equals(currentId) && isBlank(s)) return s;
+            for (Session s : sessions) if (isBlank(s)) {
+                prefs.edit().putString(CURRENT, s.id).apply();
+                return s;
+            }
+        }
+        Session s = new Session();
+        s.title = requested;
+        s.created = s.updated = System.currentTimeMillis();
+        sessions.add(s);
+        saveSessions(sessions);
+        prefs.edit().putString(CURRENT, s.id).apply();
+        return s;
     }
 
     public synchronized void selectSession(String id) { prefs.edit().putString(CURRENT, id).apply(); }
@@ -140,15 +169,41 @@ public final class AgentWorkspaceStore {
         for (Session s : sessions) if (s.id.equals(sessionId)) {
             s.messages.add(new Message(role, text == null ? "" : text, System.currentTimeMillis()));
             if ("user".equals(role) && (s.title.equals("New chat") || s.title.isEmpty())) s.title = titleFor(text);
-            s.updated = System.currentTimeMillis(); break;
+            s.updated = System.currentTimeMillis();
+            break;
         }
         saveSessions(sessions);
     }
 
     public synchronized void deleteSession(String id) {
-        List<Session> sessions = getSessions(); sessions.removeIf(s -> s.id.equals(id)); saveSessions(sessions);
-        if (id.equals(currentSessionId())) { if (sessions.isEmpty()) newSession("New chat"); else selectSession(sessions.get(0).id); }
+        List<Session> sessions = getSessions();
+        sessions.removeIf(s -> s.id.equals(id));
+        saveSessions(sessions);
+        if (id.equals(currentSessionId())) {
+            if (sessions.isEmpty()) newSession("New chat");
+            else selectSession(sessions.get(0).id);
+        }
     }
+
+    private void normalizeEmptySessions(List<Session> sessions) {
+        Session keep = null;
+        boolean changed = false;
+        for (int i = sessions.size() - 1; i >= 0; i--) {
+            Session s = sessions.get(i);
+            if (!isBlank(s)) continue;
+            if (keep == null) keep = s;
+            else { sessions.remove(i); changed = true; }
+        }
+        if (keep != null && changed) {
+            String current = prefs.getString(CURRENT, "");
+            boolean currentRemoved = true;
+            for (Session s : sessions) if (s.id.equals(current)) { currentRemoved = false; break; }
+            if (currentRemoved) prefs.edit().putString(CURRENT, keep.id).apply();
+            saveSessions(sessions);
+        }
+    }
+
+    private static boolean isBlank(Session s) { return s != null && s.messages.isEmpty() && (s.title == null || s.title.trim().isEmpty() || "New chat".equals(s.title)); }
 
     private void saveSessions(List<Session> sessions) {
         JSONArray arr = new JSONArray();
