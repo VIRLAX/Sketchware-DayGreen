@@ -20,22 +20,16 @@ public final class AgentActionExecutor {
         public final String target;
         public final String language;
         public final String content;
-
-        private Action(String target, String language, String content) {
-            this.target = target;
-            this.language = language;
-            this.content = content;
-        }
-
+        private Action(String target, String language, String content) { this.target = target; this.language = language; this.content = content; }
         public boolean isXml() { return target.toLowerCase(Locale.US).endsWith(".xml") || "xml".equals(language); }
+        public boolean isBlocks() { return target.toLowerCase(Locale.US).startsWith("blocks/"); }
     }
 
     private AgentActionExecutor() { }
 
     public static Action parse(String response) {
         if (response == null) return null;
-        Matcher target = TARGET.matcher(response);
-        Matcher fence = FENCE.matcher(response);
+        Matcher target = TARGET.matcher(response), fence = FENCE.matcher(response);
         if (!target.find() || !fence.find()) return null;
         String path = target.group(1).trim().replace('\\', '/');
         String language = fence.group(1) == null ? "text" : fence.group(1).trim().toLowerCase(Locale.US);
@@ -47,21 +41,17 @@ public final class AgentActionExecutor {
     public static String apply(Context context, String scId, Action action) {
         if (action == null) return "The response did not contain a safe TARGET and fenced code block.";
         if (action.isXml()) return "XML_HANDOFF";
+        if (action.isBlocks()) return AgentBlockExecutor.apply(scId, action.target, action.content);
         String target = action.target;
         if (target.startsWith("/") || target.contains("..") || target.contains(":") || target.contains("\\")) return "Rejected unsafe target path: " + target;
         String lower = target.toLowerCase(Locale.US);
         File root;
-        if (lower.endsWith(".java") || lower.endsWith(".kt") || lower.endsWith(".kts") || lower.endsWith(".gradle")) {
-            root = new File(new FilePathUtil().getPathJava(scId));
-        } else if (lower.endsWith(".cpp") || lower.endsWith(".c") || lower.endsWith(".h") || lower.endsWith(".hpp")) {
-            root = new File(new FilePathUtil().getPathNativelibs(scId));
-        } else {
-            return "Rejected unsupported target type: " + target;
-        }
+        if (lower.endsWith(".java") || lower.endsWith(".kt") || lower.endsWith(".kts") || lower.endsWith(".gradle")) root = new File(new FilePathUtil().getPathJava(scId));
+        else if (lower.endsWith(".cpp") || lower.endsWith(".c") || lower.endsWith(".h") || lower.endsWith(".hpp")) root = new File(new FilePathUtil().getPathNativelibs(scId));
+        else return "Rejected unsupported target type: " + target;
         File file = new File(root, target);
         try {
-            String rootPath = root.getCanonicalPath();
-            String filePath = file.getCanonicalPath();
+            String rootPath = root.getCanonicalPath(), filePath = file.getCanonicalPath();
             if (!filePath.equals(rootPath) && !filePath.startsWith(rootPath + File.separator)) return "Rejected target outside project source root.";
             File parent = file.getParentFile();
             if (parent != null && !parent.exists() && !parent.mkdirs()) return "Could not create target directory.";
