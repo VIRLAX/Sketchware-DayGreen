@@ -38,7 +38,7 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
     @Override public void onActivityCreated(@NonNull Activity activity, Bundle state) {
         if (!(activity instanceof FragmentActivity) || !"com.besome.sketch.design.DesignActivity".equals(activity.getClass().getName())) return;
         INSTANCES.put(activity, this);
-        activity.getDecorView().post(() -> attach((FragmentActivity) activity));
+        activity.getWindow().getDecorView().post(() -> attach((FragmentActivity) activity));
     }
 
     public static void exitAgent(Activity activity) { AgentTabEnhancer hook = INSTANCES.get(activity); if (hook != null) hook.restore(activity); }
@@ -81,11 +81,8 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         agentContainer.addView(undo, undoParams);
 
         ViewCompat.setOnApplyWindowInsetsListener(agentContainer, (view, insets) -> {
-            Insets bars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.navigationBars());
-            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-            int top = bars.top + dp(activity, 8);
-            int bottom = Math.max(bars.bottom, ime.bottom);
-            agentContainer.setPadding(0, top, 0, bottom);
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
+            agentContainer.setPadding(0, bars.top + dp(activity, 8), 0, 0);
             ViewGroup.LayoutParams raw = undo.getLayoutParams();
             if (raw instanceof FrameLayout.LayoutParams) {
                 FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) raw;
