@@ -83,12 +83,11 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
 
         ViewCompat.setOnApplyWindowInsetsListener(agentContainer, (view, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
-            int safeTop = Math.max(bars.top + dp(activity, 8), dp(activity, 32));
-            agentContainer.setPadding(0, safeTop, 0, 0);
+            agentContainer.setPadding(0, 0, 0, 0);
             ViewGroup.LayoutParams raw = undo.getLayoutParams();
             if (raw instanceof FrameLayout.LayoutParams) {
                 FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) raw;
-                params.topMargin = dp(activity, 8);
+                params.topMargin = bars.top + dp(activity, 40);
                 params.rightMargin = dp(activity, 8);
                 undo.setLayoutParams(params);
             }
