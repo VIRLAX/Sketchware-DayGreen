@@ -6,14 +6,15 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
+import androidx.viewpager.widget.ViewPager;
 
 import com.google.android.material.tabs.TabLayout;
-import androidx.viewpager.widget.ViewPager;
 
 import java.util.WeakHashMap;
 
@@ -24,8 +25,7 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
     private static final String FRAGMENT_TAG = "daygreen_gemini_agent_tab";
     private final WeakHashMap<Activity, Integer> attachedContainers = new WeakHashMap<>();
 
-    @Override
-    public void onActivityCreated(@NonNull Activity activity, Bundle state) {
+    @Override public void onActivityCreated(@NonNull Activity activity, Bundle state) {
         if (!(activity instanceof FragmentActivity) || !"com.besome.sketch.design.DesignActivity".equals(activity.getClass().getName())) return;
         activity.getWindow().getDecorView().post(() -> attach((FragmentActivity) activity));
     }
@@ -43,13 +43,15 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         host.addView(agentContainer, new ViewGroup.LayoutParams(-1, -1));
         attachedContainers.put(activity, agentContainer.getId());
 
+        String projectId = activity.getIntent().getStringExtra("sc_id");
+        TextView fileName = activity.findViewById(R.id.file_name);
+        String selectedFile = fileName == null ? "" : fileName.getText().toString();
         FragmentManager manager = activity.getSupportFragmentManager();
         Fragment existing = manager.findFragmentByTag(FRAGMENT_TAG);
         if (existing != null) manager.beginTransaction().remove(existing).commitNowAllowingStateLoss();
-        manager.beginTransaction().replace(agentContainer.getId(), AgentFragment.newInstance(activity.getIntent().getStringExtra("sc_id")), FRAGMENT_TAG).commitNowAllowingStateLoss();
+        manager.beginTransaction().replace(agentContainer.getId(), AgentFragmentV2.newInstance(projectId, selectedFile), FRAGMENT_TAG).commitNowAllowingStateLoss();
 
-        // setupWithViewPager only knows the original 3 pages. Detach it, keep those tabs, and
-        // route the four visible tabs manually so selecting Agent never asks the pager for page 3.
+        // The legacy pager has three pages. Detach its TabLayout listener and route four tabs manually.
         tabs.setupWithViewPager(null);
         TabLayout.Tab agentTab = tabs.newTab().setText("Agent");
         tabs.addTab(agentTab, false);
@@ -64,14 +66,11 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
                 } else {
                     agentContainer.setVisibility(View.GONE);
                     pager.setVisibility(View.VISIBLE);
-                    pager.setCurrentItem(Math.min(position, Math.max(0, pager.getAdapter() == null ? 0 : pager.getAdapter().getCount() - 1)), false);
+                    int count = pager.getAdapter() == null ? 1 : pager.getAdapter().getCount();
+                    pager.setCurrentItem(Math.min(position, Math.max(0, count - 1)), false);
                 }
             }
-
-            @Override public void onTabUnselected(TabLayout.Tab tab) {
-                if (tab == agentTab) agentContainer.setVisibility(View.GONE);
-            }
-
+            @Override public void onTabUnselected(TabLayout.Tab tab) { if (tab == agentTab) agentContainer.setVisibility(View.GONE); }
             @Override public void onTabReselected(TabLayout.Tab tab) { }
         });
         pager.addOnPageChangeListener(new ViewPager.SimpleOnPageChangeListener() {
