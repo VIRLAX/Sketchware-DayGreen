@@ -54,7 +54,8 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         FrameLayout agentContainer = new FrameLayout(activity);
         agentContainer.setId(View.generateViewId());
         agentContainer.setVisibility(View.GONE);
-        agentContainer.setClipToPadding(false);
+        agentContainer.setClipToPadding(true);
+        agentContainer.setClipChildren(true);
         agentContainer.setFitsSystemWindows(false);
         host.addView(agentContainer, new ViewGroup.LayoutParams(-1, -1));
         attachedContainers.put(activity, agentContainer.getId());
@@ -82,7 +83,8 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
 
         ViewCompat.setOnApplyWindowInsetsListener(agentContainer, (view, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
-            agentContainer.setPadding(0, bars.top + dp(activity, 8), 0, 0);
+            int safeTop = Math.max(bars.top + dp(activity, 8), dp(activity, 32));
+            agentContainer.setPadding(0, safeTop, 0, 0);
             ViewGroup.LayoutParams raw = undo.getLayoutParams();
             if (raw instanceof FrameLayout.LayoutParams) {
                 FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) raw;
