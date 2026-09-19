@@ -3,6 +3,8 @@ package pro.sketchware.editor;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,68 +13,78 @@ import android.text.method.PasswordTransformationMethod;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
+import android.view.WindowManager;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.ScrollView;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.widget.PopupMenu;
 import androidx.fragment.app.Fragment;
 
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import pro.sketchware.activities.editor.view.ViewCodeEditorActivity;
 
-/** Project-aware Gemini surface with explicit preview and approval before source writes. */
+/** Dark, compact, session-aware Agent surface. All writes remain behind Accept. */
 public final class AgentFragmentV2 extends Fragment {
+    private static final int BG = Color.rgb(15, 20, 18);
+    private static final int SURFACE = Color.rgb(22, 29, 26);
+    private static final int SURFACE_2 = Color.rgb(29, 39, 35);
+    private static final int TEXT = Color.rgb(228, 237, 231);
+    private static final int MUTED = Color.rgb(150, 164, 156);
+    private static final int MINT = Color.rgb(157, 229, 198);
+    private static final int AMBER = Color.rgb(224, 177, 92);
     private static final Pattern MUTATING = Pattern.compile("(?i)\\b(create|make|build|generate|fix|repair|change|modify|update|buat|bikin|perbaiki|ubah|layout|xml|java|kotlin|c\\+\\+|block|code)\\b");
+
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final GeminiAgentClient client = new GeminiAgentClient();
-    private AgentSettingsStore store;
+    private final GeminiAutoClient client = new GeminiAutoClient();
+    private final Set<String> triedRoutes = new HashSet<>();
+    private AgentWorkspaceStore store;
+    private AgentWorkspaceStore.Session session;
+    private List<AgentWorkspaceStore.Profile> profiles = new ArrayList<>();
     private LinearLayout messages;
     private ScrollView transcript;
-    private LinearLayout settings;
-    private EditText keyInput;
-    private Spinner model;
-    private TextView status;
-    private TextView rate;
-    private TextView dot;
-    private TextView connection;
+    private LinearLayout settingsView;
+    private LinearLayout profileList;
+    private LinearLayout thinkingPanel;
+    private TextView thinkingText;
+    private TextView statusText;
+    private TextView sessionTitle;
     private EditText composer;
-    private String modelName;
+    private TextView liveAssistant;
+    private String liveAnswer = "";
     private String projectId;
     private String selectedFile;
-    private boolean validated;
     private boolean busy;
     private Runnable heartbeat;
 
     public static AgentFragmentV2 newInstance(String projectId, String selectedFile) {
-        AgentFragmentV2 fragment = new AgentFragmentV2();
-        Bundle args = new Bundle();
-        args.putString("project_id", projectId == null ? "" : projectId);
-        args.putString("selected_file", selectedFile == null ? "" : selectedFile);
-        fragment.setArguments(args);
-        return fragment;
+        AgentFragmentV2 f = new AgentFragmentV2();
+        Bundle b = new Bundle(); b.putString("project_id", projectId == null ? "" : projectId); b.putString("selected_file", selectedFile == null ? "" : selectedFile); f.setArguments(b); return f;
     }
 
     @Nullable @Override public View onCreateView(@NonNull android.view.LayoutInflater inflater, @Nullable ViewGroup parent, @Nullable Bundle state) {
         projectId = getArguments() == null ? "" : getArguments().getString("project_id", "");
         selectedFile = getArguments() == null ? "" : getArguments().getString("selected_file", "");
-        store = new AgentSettingsStore(requireContext());
-        modelName = store.getModel();
+        store = new AgentWorkspaceStore(requireContext());
+        session = store.getOrCreateCurrent();
+        profiles = store.getProfiles();
+        requireActivity().getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         return build(requireContext());
     }
 
@@ -81,214 +93,116 @@ public final class AgentFragmentV2 extends Fragment {
     @Override public void onDestroyView() { stopHeartbeat(); super.onDestroyView(); }
 
     private View build(Context c) {
-        LinearLayout root = column(c);
-        root.setPadding(dp(16), dp(12), dp(16), dp(12));
-        LinearLayout head = row(c);
-        TextView title = label(c, "✦  Gemini Agent", 20, true);
-        head.addView(title, weight(1));
-        MaterialButton settingsButton = button(c, "Settings");
-        settingsButton.setIconResource(android.R.drawable.ic_menu_manage);
-        settingsButton.setOnClickListener(v -> settings.setVisibility(settings.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
-        head.addView(settingsButton);
-        MaterialButton menu = button(c, "");
-        menu.setIconResource(android.R.drawable.ic_menu_more);
-        menu.setContentDescription("Agent menu");
-        menu.setOnClickListener(this::showMenu);
-        head.addView(menu, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        root.addView(head);
+        FrameLayout root = new FrameLayout(c); root.setBackgroundColor(BG);
+        LinearLayout agent = column(c); agent.setPadding(dp(16), dp(10), dp(16), dp(10)); root.addView(agent, new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout header = row(c); header.setGravity(Gravity.CENTER_VERTICAL);
+        MaterialButton menu = iconButton(c, "☰", "Chat menu"); menu.setOnClickListener(v -> showMenu(menu)); header.addView(menu, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout titleBox = column(c); titleBox.setGravity(Gravity.CENTER_VERTICAL); sessionTitle = label(c, session.title, 16, true); titleBox.addView(sessionTitle); TextView sub = label(c, "Dayven AI", 11, false); sub.setTextColor(MUTED); titleBox.addView(sub); header.addView(titleBox, weight(1));
+        MaterialButton settings = iconButton(c, "⚙", "Settings"); settings.setOnClickListener(v -> showSettings()); header.addView(settings, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        MaterialButton exit = iconButton(c, "×", "Exit Agent"); exit.setOnClickListener(v -> AgentTabEnhancer.exitAgent(requireActivity())); header.addView(exit, new LinearLayout.LayoutParams(dp(44), dp(44))); agent.addView(header);
 
-        LinearLayout heartbeatRow = row(c);
-        dot = label(c, "●", 16, false);
-        dot.setTextColor(Color.rgb(130, 130, 130));
-        heartbeatRow.addView(dot, new LinearLayout.LayoutParams(dp(24), dp(48)));
-        connection = label(c, "Offline, add a Gemini key", 13, false);
-        heartbeatRow.addView(connection, weight(1));
-        rate = label(c, "", 12, false);
-        rate.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        heartbeatRow.addView(rate);
-        root.addView(heartbeatRow);
+        LinearLayout connection = row(c); connection.setGravity(Gravity.CENTER_VERTICAL); TextView dot = label(c, "●", 14, false); dot.setTextColor(MINT); connection.addView(dot, new LinearLayout.LayoutParams(dp(22), dp(34))); statusText = label(c, "Ready", 12, false); statusText.setTextColor(MUTED); connection.addView(statusText, weight(1)); TextView auto = label(c, "AUTO", 10, true); auto.setTextColor(MINT); auto.setPadding(dp(8), dp(3), dp(8), dp(3)); auto.setBackground(round(SURFACE_2, 10)); connection.addView(auto); agent.addView(connection);
 
-        settings = buildSettings(c);
-        settings.setVisibility(View.GONE);
-        root.addView(settings);
-
-        transcript = new ScrollView(c);
-        transcript.setFillViewport(true);
-        messages = column(c);
-        messages.setPadding(0, dp(8), 0, dp(8));
-        transcript.addView(messages, new ViewGroup.LayoutParams(-1, -2));
-        root.addView(transcript, new LinearLayout.LayoutParams(-1, 0, 1));
-        addAssistant(store.getApiKey().isEmpty()
-                ? "Add your Gemini key in Settings, validate it, then ask me to inspect or change the current project. I will show the exact action before any write."
-                : "Connected settings are saved for this device. Every source or layout write still waits for Accept.");
-
-        LinearLayout bottom = row(c);
-        composer = new EditText(c);
-        composer.setHint("Ask the Agent to inspect, explain, or prepare a change...");
-        composer.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        composer.setMinLines(1); composer.setMaxLines(4);
-        bottom.addView(composer, weight(1));
-        MaterialButton send = button(c, "Send");
-        send.setOnClickListener(v -> send());
-        bottom.addView(send);
-        root.addView(bottom);
-        return root;
+        transcript = new ScrollView(c); transcript.setFillViewport(true); messages = column(c); messages.setPadding(0, dp(8), 0, dp(8)); transcript.addView(messages, new ViewGroup.LayoutParams(-1, -2)); agent.addView(transcript, new LinearLayout.LayoutParams(-1, 0, 1));
+        thinkingPanel = buildThinking(c); thinkingPanel.setVisibility(View.GONE); agent.addView(thinkingPanel);
+        LinearLayout composerRow = row(c); composerRow.setGravity(Gravity.BOTTOM); composer = new EditText(c); composer.setHint("Ask Dayven AI anything..."); composer.setHintTextColor(Color.rgb(111, 127, 118)); composer.setTextColor(TEXT); composer.setTextSize(15); composer.setGravity(Gravity.TOP | Gravity.START); composer.setPadding(dp(14), dp(12), dp(12), dp(12)); composer.setMinLines(1); composer.setMaxLines(5); composer.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE); composer.setBackground(round(SURFACE, 18)); composerRow.addView(composer, weight(1)); MaterialButton send = iconButton(c, "↑", "Send"); send.setTextColor(BG); send.setBackgroundTintList(android.content.res.ColorStateList.valueOf(MINT)); send.setOnClickListener(v -> send()); composerRow.addView(send, new LinearLayout.LayoutParams(dp(48), dp(48))); agent.addView(composerRow);
+        restoreSession(); return root;
     }
 
-    private LinearLayout buildSettings(Context c) {
-        LinearLayout box = column(c);
-        box.setPadding(dp(12), dp(8), dp(12), dp(10));
-        box.setBackgroundColor(Color.rgb(242, 241, 248));
-        box.addView(label(c, "Gemini connection", 16, true));
-        box.addView(label(c, "Saved once for all Sketchware projects on this device. The key is encrypted with Android Keystore.", 12, false));
-        LinearLayout keyRow = row(c);
-        keyInput = new EditText(c);
-        keyInput.setHint("Paste Gemini API key");
-        keyInput.setSingleLine(true);
-        keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        keyInput.setTransformationMethod(PasswordTransformationMethod.getInstance());
-        keyRow.addView(keyInput, weight(1));
-        MaterialButton check = button(c, "Check");
-        check.setOnClickListener(v -> validateKey());
-        keyRow.addView(check);
-        box.addView(keyRow);
-        LinearLayout modelRow = row(c);
-        modelRow.addView(label(c, "Model", 13, false), new LinearLayout.LayoutParams(dp(64), dp(52)));
-        model = new Spinner(c);
-        model.setAdapter(new ArrayAdapter<>(c, android.R.layout.simple_spinner_dropdown_item, new String[]{modelName}));
-        model.setEnabled(false);
-        model.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) { if (p.getItemAtPosition(pos) != null) modelName = String.valueOf(p.getItemAtPosition(pos)); }
-            @Override public void onNothingSelected(android.widget.AdapterView<?> p) { }
-        });
-        modelRow.addView(model, weight(1));
-        box.addView(modelRow);
-        LinearLayout saveRow = row(c);
-        status = label(c, "Not validated", 12, false);
-        saveRow.addView(status, weight(1));
-        MaterialButton save = button(c, "Save");
-        save.setOnClickListener(v -> saveKey());
-        saveRow.addView(save);
-        box.addView(saveRow);
-        return box;
+    private LinearLayout buildThinking(Context c) {
+        LinearLayout box = row(c); box.setGravity(Gravity.CENTER_VERTICAL); box.setPadding(dp(6), dp(2), dp(6), dp(4)); TextView arrow = label(c, "▶", 11, false); arrow.setTextColor(MINT); arrow.setPadding(dp(4), dp(4), dp(10), dp(4)); box.addView(arrow); thinkingText = label(c, "Dayven AI resesioning...", 12, false); thinkingText.setTextColor(MUTED); box.addView(thinkingText, weight(1)); LinearProgressIndicator line = new LinearProgressIndicator(c); line.setIndeterminate(true); line.setTrackThickness(dp(2)); box.addView(line, new LinearLayout.LayoutParams(dp(72), dp(8))); arrow.setOnClickListener(v -> thinkingText.setText(thinkingText.getText().toString().contains("Read") ? "Dayven AI resesioning..." : "Read context  ·  route model  ·  stream answer")); return box;
     }
 
-    private void validateKey() {
-        String key = text(keyInput);
-        if (key.isEmpty()) { state("Paste a key first", false); return; }
-        state("Validating key and discovering models...", false); setConnection("Validating Gemini...", Color.rgb(190, 120, 20));
-        client.listModels(key, new GeminiAgentClient.Listener() {
-            @Override public void onModels(List<GeminiAgentClient.ModelInfo> list, String remaining, String retry) { main.post(() -> { updateRate(remaining, retry); if (list.isEmpty()) { validated = false; state("No compatible text model found", false); return; } validated = true; updateModels(list); state(list.size() + " compatible model(s) available", true); setConnection("Connected to Gemini", Color.rgb(40, 150, 90)); }); }
-            @Override public void onAnswer(String answer, String remaining, String retry) { }
-            @Override public void onError(String message, String remaining, String retry) { main.post(() -> { validated = false; updateRate(remaining, retry); state(message, false); setConnection("Gemini unavailable", Color.rgb(190, 55, 55)); }); }
-        });
-    }
-
-    private void saveKey() {
-        String key = text(keyInput);
-        if (key.isEmpty() || !validated) { state("Validate a working key before saving", false); return; }
-        store.saveApiKey(key); store.saveModel(modelName); keyInput.setText("");
-        state("Saved for all projects on this device", true); setConnection("Connected to Gemini", Color.rgb(40, 150, 90));
-        Toast.makeText(requireContext(), "Gemini Agent saved", Toast.LENGTH_SHORT).show();
-    }
-
-    private void updateModels(List<GeminiAgentClient.ModelInfo> list) {
-        List<String> names = new ArrayList<>();
-        for (GeminiAgentClient.ModelInfo item : list) names.add(item.name.replace("models/", ""));
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(requireContext(), android.R.layout.simple_spinner_dropdown_item, names);
-        model.setAdapter(adapter); model.setEnabled(true);
-        int selected = Math.max(0, names.indexOf(modelName.replace("models/", "")));
-        model.setSelection(selected); modelName = names.get(selected);
+    private void restoreSession() {
+        messages.removeAllViews();
+        if (session.messages.isEmpty()) addAssistant("I’m ready. Ask me to inspect, explain, or prepare a project change. I’ll show the action first and wait for Accept.");
+        else for (AgentWorkspaceStore.Message m : session.messages) bubble(m.text, "user".equals(m.role));
+        scrollBottom();
     }
 
     private void send() {
-        if (busy) return;
-        String prompt = text(composer); if (prompt.isEmpty()) return;
-        String key = store.getApiKey();
-        if (key.isEmpty()) { addAssistant("I need a Gemini API key first. Open Settings, tap Check, then Save."); settings.setVisibility(View.VISIBLE); return; }
-        composer.setText(""); store.appendHistory(prompt); addUser(prompt); busy = true;
-        setConnection("Agent is working...", Color.rgb(190, 120, 20)); LinearProgressIndicator progress = progressCard();
-        String context = AgentProjectContext.build(requireContext(), projectId, selectedFile);
-        String request = "You are the embedded Sketchware-DayGreen project agent. Work only from the supplied project context.\n"
-                + "Be precise and root-cause focused. Do not claim a change was applied. For explanation-only requests, answer normally. For any requested mutation, finish with exactly one machine-readable proposal: a line TARGET: relative/path/to/file, then one fenced code block containing the complete replacement content. Use XML for layouts, java for Java, kotlin for Kotlin, cpp for C/C++. For blocks, explain the exact block operations and do not invent a file format.\n\nPROJECT CONTEXT:\n" + context + "\n\nUSER REQUEST:\n" + prompt;
-        client.generate(key, modelName, request, new GeminiAgentClient.Listener() {
-            @Override public void onModels(List<GeminiAgentClient.ModelInfo> models, String remaining, String retryAfter) { }
-            @Override public void onAnswer(String answer, String remaining, String retryAfter) { main.post(() -> { progress.setVisibility(View.GONE); busy = false; updateRate(remaining, retryAfter); setConnection("Connected to Gemini", Color.rgb(40, 150, 90)); addAssistant(answer); if (MUTATING.matcher(prompt).find()) proposal(answer); }); }
-            @Override public void onError(String message, String remaining, String retryAfter) { main.post(() -> { progress.setVisibility(View.GONE); busy = false; updateRate(remaining, retryAfter); setConnection("Gemini request failed", Color.rgb(190, 55, 55)); addAssistant("Request failed: " + message); }); }
+        if (busy) return; String prompt = composer == null ? "" : composer.getText().toString().trim(); if (prompt.isEmpty()) return;
+        if (profiles.stream().noneMatch(p -> p.enabled && !p.key.isEmpty())) { addAssistant("Add a Gemini API profile in Settings first. You only need to do it once."); showSettings(); return; }
+        composer.setText(""); store.append(session.id, "user", prompt); session = store.getSession(session.id); bubble(prompt, true); busy = true; triedRoutes.clear(); thinkingPanel.setVisibility(View.VISIBLE); status("Dayven AI is working...", AMBER);
+        String context = AgentProjectContext.build(requireContext(), projectId, selectedFile); String request = promptFor(prompt, context); liveAnswer = ""; liveAssistant = null; runDiscoveryThenRoute(request, prompt, 0);
+    }
+
+    private String promptFor(String prompt, String context) { return "You are Dayven AI embedded in Sketchware-DayGreen. Work only from this project context. Be concise and accurate. Never claim a change was applied. If the user asks for a mutation, finish with exactly one proposal: TARGET: relative/path/to/file, then one fenced code block with complete replacement content. Use XML, java, kotlin, cpp, or blocks/<JavaFile>/<eventKey> as appropriate. Do not invent block formats.\n\nPROJECT CONTEXT:\n" + context + "\n\nUSER REQUEST:\n" + prompt; }
+
+    private void runDiscoveryThenRoute(String request, String original, int profileIndex) {
+        profiles = store.getProfiles(); if (profileIndex >= profiles.size()) { runRoutes(request, original); return; }
+        AgentWorkspaceStore.Profile p = profiles.get(profileIndex); if (!p.enabled || p.key.isEmpty() || !p.models.isEmpty()) { runDiscoveryThenRoute(request, original, profileIndex + 1); return; }
+        status("Checking " + p.name + " models...", AMBER); client.listModels(p.key, new GeminiAutoClient.Listener() {
+            @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) { p.models.clear(); for (GeminiAutoClient.ModelInfo m : models) p.models.add(m.id()); p.lastError = models.isEmpty() ? "No text models" : ""; p.rate = remaining; store.saveProfiles(profiles); main.post(() -> runDiscoveryThenRoute(request, original, profileIndex + 1)); }
+            @Override public void onDelta(String text) { }
+            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) { }
+            @Override public void onError(int status, String message, String remaining, String retry) { p.lastError = message; p.failures++; store.saveProfiles(profiles); main.post(() -> runDiscoveryThenRoute(request, original, profileIndex + 1)); }
         });
     }
 
-    private LinearProgressIndicator progressCard() {
-        LinearProgressIndicator bar = new LinearProgressIndicator(requireContext()); bar.setIndeterminate(true);
-        MaterialCardView card = card(); LinearLayout body = column(requireContext()); body.setPadding(dp(12), dp(10), dp(12), dp(10));
-        body.addView(label(requireContext(), "Agent process", 13, true));
-        body.addView(label(requireContext(), "✓ Read project files and compile log", 12, false));
-        body.addView(label(requireContext(), "◌ Analyze root cause and prepare proposal", 12, false));
-        body.addView(label(requireContext(), "◌ Wait for Accept before writing", 12, false)); body.addView(bar); card.addView(body); messages.addView(card); bottom(); return bar;
+    private void runRoutes(String request, String original) {
+        List<Route> routes = routesFor(original); if (routes.isEmpty()) { finishError("No valid Gemini model is available. Open Settings and validate at least one API profile."); return; } streamRoute(request, original, routes, 0);
     }
 
-    private void proposal(String answer) {
-        AgentActionExecutor.Action action = AgentActionExecutor.parse(answer);
-        MaterialCardView card = card(); LinearLayout body = column(requireContext()); body.setPadding(dp(12), dp(12), dp(12), dp(8));
-        body.addView(label(requireContext(), "Proposed change, approval required", 15, true));
-        if (action == null) body.addView(label(requireContext(), "No safe machine-readable target was found. Nothing can be applied automatically.", 12, false));
-        else body.addView(label(requireContext(), "Target: " + action.target + "\nLanguage: " + action.language + "\n\nPreview:\n" + preview(action.content), 12, false));
-        LinearLayout actions = row(requireContext()); MaterialButton cancel = button(requireContext(), "Cancel"); MaterialButton accept = button(requireContext(), "Accept");
-        cancel.setOnClickListener(v -> { card.setVisibility(View.GONE); addAssistant("Cancelled. No project data was changed."); });
-        accept.setOnClickListener(v -> { card.setVisibility(View.GONE); accept(action); });
-        actions.addView(cancel, weight(1)); actions.addView(accept, weight(1)); body.addView(actions); card.addView(body); messages.addView(card); bottom();
+    private List<Route> routesFor(String prompt) {
+        List<Route> out = new ArrayList<>(); profiles = store.getProfiles(); boolean hard = prompt.length() > 240 || MUTATING.matcher(prompt).find() || prompt.toLowerCase(Locale.US).contains("error"); boolean easy = prompt.length() < 90 && !MUTATING.matcher(prompt).find();
+        for (AgentWorkspaceStore.Profile p : profiles) if (p.enabled && !p.key.isEmpty()) { List<String> models = new ArrayList<>(p.models); models.sort(Comparator.comparingInt(m -> rank(m, hard, easy))); for (String m : models) out.add(new Route(p, m)); }
+        return out;
     }
 
-    private void accept(AgentActionExecutor.Action action) {
-        if (action == null) { addAssistant("I did not apply anything because the proposal was missing a safe target and code block."); return; }
-        if (action.isXml()) {
-            Intent intent = new Intent(requireContext(), ViewCodeEditorActivity.class);
-            intent.putExtra("sc_id", projectId); intent.putExtra("title", action.target); intent.putExtra("content", action.content);
-            startActivity(intent); addAssistant("Accepted. XML is open in Direct XML. Its existing auto-sync keeps the Visual Editor model as source of truth."); return;
-        }
-        String result = AgentActionExecutor.apply(requireContext(), projectId, action);
-        if (result.startsWith("APPLIED:")) addAssistant("Accepted and written: " + result.substring("APPLIED:".length()) + "\nRun the project build to verify it.");
-        else addAssistant("I did not write the project: " + result);
+    private int rank(String model, boolean hard, boolean easy) { String m = model.toLowerCase(Locale.US); boolean pro = m.contains("pro"); boolean lite = m.contains("lite"); if (hard) return pro ? 0 : lite ? 3 : 1; if (easy) return lite ? 0 : pro ? 3 : 1; return m.contains("flash") && !lite ? 0 : pro ? 1 : 2; }
+
+    private void streamRoute(String request, String original, List<Route> routes, int index) {
+        if (index >= routes.size()) { finishError("All configured Gemini profiles or their available quotas failed. Add another profile or wait for reset."); return; }
+        Route route = routes.get(index); String key = route.profile.id + ":" + route.model; if (!triedRoutes.add(key)) { streamRoute(request, original, routes, index + 1); return; }
+        status("Connected · " + route.profile.name + " · auto", MINT); showThinking("Dayven AI resesioning..."); final StringBuilder answer = new StringBuilder(); liveAnswer = "";
+        client.stream(route.profile.key, route.model, request, new GeminiAutoClient.Listener() {
+            @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retryAfter) { }
+            @Override public void onDelta(String text) { main.post(() -> { if (liveAssistant == null) liveAssistant = addAssistantBubble(""); liveAnswer += text; liveAssistant.setText(liveAnswer); scrollBottom(); }); }
+            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retryAfter) { main.post(() -> { busy = false; thinkingPanel.setVisibility(View.GONE); status("Connected · " + route.profile.name + (usage.label().isEmpty() ? "" : " · " + usage.label()), MINT); if (liveAssistant == null) liveAssistant = addAssistantBubble(""); liveAssistant.setText(liveAnswer); store.append(session.id, "assistant", liveAnswer); session = store.getSession(session.id); if (MUTATING.matcher(original).find()) showProposal(liveAnswer); }); }
+            @Override public void onError(int status, String message, String remaining, String retryAfter) { main.post(() -> { route.profile.lastError = message; route.profile.failures++; route.profile.rate = remaining.isEmpty() ? retryAfter : remaining; store.saveProfiles(profiles); if (status == 429 || status == 403 || status == 404 || status == 0) streamRoute(request, original, routes, index + 1); else finishError(message); }); }
+        });
     }
 
-    private String preview(String value) { return value.length() > 1600 ? value.substring(0, 1600) + "\n…" : value; }
-
-    private void showMenu(View anchor) {
-        PopupMenu menu = new PopupMenu(requireContext(), anchor);
-        menu.getMenu().add("Chat history").setOnMenuItemClickListener(i -> { history(); return true; });
-        menu.getMenu().add("Live API rate limit").setOnMenuItemClickListener(i -> { new MaterialAlertDialogBuilder(requireContext()).setTitle("Gemini API rate limit").setMessage(rate.getText().length() == 0 ? "No rate-limit headers reported by Gemini yet." : rate.getText()).setPositiveButton("Close", null).show(); return true; });
-        menu.getMenu().add("Open settings").setOnMenuItemClickListener(i -> { settings.setVisibility(View.VISIBLE); return true; }); menu.show();
+    private void showProposal(String answer) {
+        AgentActionExecutor.Action action = AgentActionExecutor.parse(answer); LinearLayout box = column(requireContext()); box.setPadding(dp(12), dp(8), dp(12), dp(8)); TextView heading = label(requireContext(), "Proposed change", 13, true); heading.setTextColor(MINT); box.addView(heading); box.addView(label(requireContext(), action == null ? "No safe target was found, so nothing can be applied automatically." : "TARGET  " + action.target + "\n" + preview(action.content), 12, false)); LinearLayout buttons = row(requireContext()); MaterialButton cancel = smallButton("Cancel"); MaterialButton accept = smallButton("Accept"); buttons.addView(cancel, weight(1)); buttons.addView(accept, weight(1)); box.addView(buttons); messages.addView(box); cancel.setOnClickListener(v -> { box.setVisibility(View.GONE); addAssistant("Cancelled. Nothing was changed."); }); accept.setOnClickListener(v -> { box.setVisibility(View.GONE); accept(action); }); scrollBottom();
     }
 
-    private void history() {
-        List<String> items = store.getHistory();
-        if (items.isEmpty()) { new MaterialAlertDialogBuilder(requireContext()).setTitle("Chat history").setMessage("No prompts yet.").setPositiveButton("Close", null).show(); return; }
-        new MaterialAlertDialogBuilder(requireContext()).setTitle("Chat history").setItems(items.toArray(new String[0]), null).setPositiveButton("Close", null).show();
-    }
+    private void accept(AgentActionExecutor.Action action) { if (action == null) { addAssistant("I did not apply anything because the proposal was incomplete."); return; } if (action.isXml()) { Intent i = new Intent(requireContext(), ViewCodeEditorActivity.class); i.putExtra("sc_id", projectId); i.putExtra("title", action.target); i.putExtra("content", action.content); startActivity(i); addAssistant("Accepted. XML is open in Direct XML and remains under Sketchware model sync."); return; } String result = AgentActionExecutor.apply(requireContext(), projectId, action); addAssistant(result.startsWith("APPLIED") ? "Accepted. " + result : "Not applied: " + result); }
 
-    private void startHeartbeat() {
-        stopHeartbeat(); heartbeat = () -> { String key = store == null ? "" : store.getApiKey(); if (key.isEmpty()) setConnection("Offline, add a Gemini key", Color.rgb(130, 130, 130)); else if (!busy) client.listModels(key, new GeminiAgentClient.Listener() {
-            @Override public void onModels(List<GeminiAgentClient.ModelInfo> list, String remaining, String retry) { main.post(() -> { updateRate(remaining, retry); setConnection(list.isEmpty() ? "Connected, no compatible model" : "Connected to Gemini", list.isEmpty() ? Color.rgb(190, 120, 20) : Color.rgb(40, 150, 90)); }); }
-            @Override public void onAnswer(String answer, String remaining, String retry) { }
-            @Override public void onError(String message, String remaining, String retry) { main.post(() -> { updateRate(remaining, retry); setConnection("Gemini unavailable", Color.rgb(190, 55, 55)); }); }
-        }); main.postDelayed(heartbeat, 30000L); }; main.post(heartbeat);
-    }
+    private void showMenu(View anchor) { PopupMenu p = new PopupMenu(requireContext(), anchor); p.getMenu().add("New chat").setOnMenuItemClickListener(i -> { session = store.newSession("New chat"); sessionTitle.setText(session.title); restoreSession(); return true; }); p.getMenu().add("Chat history").setOnMenuItemClickListener(i -> { showHistory(); return true; }); p.getMenu().add("Rate limit").setOnMenuItemClickListener(i -> { Toast.makeText(requireContext(), "Usage is shown beside the connection status after each response.", Toast.LENGTH_SHORT).show(); return true; }); p.getMenu().add("Settings").setOnMenuItemClickListener(i -> { showSettings(); return true; }); p.show(); }
+
+    private void showHistory() { LinearLayout list = column(requireContext()); list.setPadding(dp(4), dp(4), dp(4), dp(4)); List<AgentWorkspaceStore.Session> sessions = store.getSessions(); for (AgentWorkspaceStore.Session s : sessions) { TextView item = label(requireContext(), s.title, 14, false); item.setTextColor(TEXT); item.setPadding(dp(12), dp(14), dp(12), dp(14)); item.setBackground(round(SURFACE_2, 12)); item.setOnClickListener(v -> { session = store.getSession(s.id); store.selectSession(s.id); sessionTitle.setText(session.title); restoreSession(); }); item.setOnLongClickListener(v -> { new MaterialAlertDialogBuilder(requireContext()).setTitle("Delete chat?").setMessage("This permanently deletes the full conversation.").setNegativeButton("Cancel", null).setPositiveButton("Delete", (d, w) -> { store.deleteSession(s.id); session = store.getOrCreateCurrent(); sessionTitle.setText(session.title); restoreSession(); }).show(); return true; }); list.addView(item, new LinearLayout.LayoutParams(-1, -2) {{ setMargins(0, 0, 0, dp(6)); }}); } if (sessions.isEmpty()) list.addView(label(requireContext(), "No saved chats", 14, false)); new MaterialAlertDialogBuilder(requireContext()).setTitle("Chat history").setView(list).setPositiveButton("Close", null).show(); }
+
+    private void showSettings() { settingsView = buildSettingsView(requireContext()); ((ViewGroup) requireView()).findViewById(android.R.id.content); FrameLayout root = (FrameLayout) requireView(); root.addView(settingsView, new FrameLayout.LayoutParams(-1, -1)); }
+
+    private LinearLayout buildSettingsView(Context c) { LinearLayout page = column(c); page.setBackgroundColor(BG); page.setPadding(dp(16), dp(12), dp(16), dp(12)); LinearLayout h = row(c); MaterialButton back = iconButton(c, "‹", "Back"); back.setOnClickListener(v -> { ((ViewGroup) page.getParent()).removeView(page); settingsView = null; }); h.addView(back, new LinearLayout.LayoutParams(dp(44), dp(44))); h.addView(label(c, "AI settings", 20, true), weight(1)); page.addView(h); page.addView(label(c, "Auto routing, live model discovery, and quota rotation", 12, false)); profileList = column(c); page.addView(profileList, new LinearLayout.LayoutParams(-1, 0, 1)); MaterialButton add = smallButton("＋  Add API profile"); add.setOnClickListener(v -> { store.addProfile("Gemini " + (store.getProfiles().size() + 1)); profiles = store.getProfiles(); renderProfiles(c); }); page.addView(add); renderProfiles(c); return page; }
+
+    private void renderProfiles(Context c) { if (profileList == null) return; profileList.removeAllViews(); profiles = store.getProfiles(); if (profiles.isEmpty()) profileList.addView(label(c, "No API profiles yet.", 14, false)); for (AgentWorkspaceStore.Profile p : profiles) addProfileRow(c, p); }
+
+    private void addProfileRow(Context c, AgentWorkspaceStore.Profile p) { LinearLayout block = column(c); block.setPadding(dp(12), dp(10), dp(12), dp(10)); block.setBackground(round(SURFACE, 16)); LinearLayout head = row(c); TextView name = label(c, p.name + (p.models.isEmpty() ? "  ·  not checked" : "  ·  " + p.models.size() + " models"), 15, true); name.setTextColor(TEXT); head.addView(name, weight(1)); TextView arrow = label(c, "⌄", 18, false); head.addView(arrow); block.addView(head); LinearLayout details = column(c); details.setVisibility(View.GONE); head.setOnClickListener(v -> { details.setVisibility(details.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE); arrow.setText(details.getVisibility() == View.VISIBLE ? "⌃" : "⌄"); }); EditText nameInput = field(c, p.name, "Profile name"); EditText key = field(c, "", p.key.isEmpty() ? "Paste Gemini API key" : "Saved key, paste only to replace"); key.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); key.setTransformationMethod(PasswordTransformationMethod.getInstance()); details.addView(nameInput); details.addView(key); TextView info = label(c, p.lastError.isEmpty() ? "Only real models returned by Gemini will be used. Model selection stays automatic." : p.lastError, 11, false); info.setTextColor(p.lastError.isEmpty() ? MUTED : Color.rgb(235, 130, 120)); details.addView(info); LinearLayout actions = row(c); MaterialButton check = smallButton("Check"); MaterialButton save = smallButton("Save"); actions.addView(check, weight(1)); actions.addView(save, weight(1)); details.addView(actions); check.setOnClickListener(v -> validateProfile(p, nameInput, key, info, c)); save.setOnClickListener(v -> { p.name = nameInput.getText().toString().trim(); if (!key.getText().toString().trim().isEmpty()) p.key = key.getText().toString().trim(); store.saveProfiles(profiles); Toast.makeText(c, "Profile saved", Toast.LENGTH_SHORT).show(); renderProfiles(c); }); block.addView(details); profileList.addView(block, new LinearLayout.LayoutParams(-1, -2) {{ setMargins(0, dp(10), 0, 0); }}); }
+
+    private void validateProfile(AgentWorkspaceStore.Profile p, EditText name, EditText key, TextView info, Context c) { String candidate = key.getText().toString().trim(); if (candidate.isEmpty()) candidate = p.key; if (candidate.isEmpty()) { info.setText("Paste a key first."); return; } p.name = name.getText().toString().trim(); p.key = candidate; info.setText("Checking key and discovering live models..."); client.listModels(candidate, new GeminiAutoClient.Listener() { @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) { p.models.clear(); for (GeminiAutoClient.ModelInfo m : models) p.models.add(m.id()); p.lastError = models.isEmpty() ? "No text-capable model is available for this key." : "Validated · auto mode ready"; p.rate = remaining; store.saveProfiles(profiles); main.post(() -> { info.setText(p.lastError + "  " + p.models.size() + " models"); renderProfiles(c); }); } @Override public void onDelta(String text) { } @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) { } @Override public void onError(int status, String message, String remaining, String retry) { p.lastError = message; store.saveProfiles(profiles); main.post(() -> info.setText(message)); } }); }
+
+    private LinearLayout column(Context c) { LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.VERTICAL); return l; }
+    private LinearLayout row(Context c) { LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
+    private LinearLayout.LayoutParams weight(float w) { return new LinearLayout.LayoutParams(0, -2, w); }
+    private TextView label(Context c, String text, int size, boolean bold) { TextView v = new TextView(c); v.setText(text); v.setTextSize(size); v.setTextColor(TEXT); v.setTypeface(null, bold ? Typeface.BOLD : Typeface.NORMAL); return v; }
+    private EditText field(Context c, String value, String hint) { EditText e = new EditText(c); e.setText(value); e.setHint(hint); e.setHintTextColor(Color.rgb(111, 127, 118)); e.setTextColor(TEXT); e.setTextSize(14); e.setSingleLine(true); e.setPadding(dp(12), dp(9), dp(12), dp(9)); e.setBackground(round(SURFACE_2, 12)); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(0, dp(8), 0, 0); e.setLayoutParams(p); return e; }
+    private MaterialButton iconButton(Context c, String text, String description) { MaterialButton b = new MaterialButton(c); b.setText(text); b.setContentDescription(description); b.setTextSize(18); b.setTextColor(TEXT); b.setMinHeight(dp(44)); b.setMinWidth(dp(44)); b.setPadding(0, 0, 0, 0); b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)); return b; }
+    private MaterialButton smallButton(String text) { MaterialButton b = new MaterialButton(requireContext()); b.setText(text); b.setTextSize(12); b.setTextColor(TEXT); b.setMinHeight(dp(42)); b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(SURFACE_2)); return b; }
+    private GradientDrawable round(int color, int radius) { GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
+    private void bubble(String text, boolean user) { TextView t = addAssistantBubble(text); t.setTextColor(TEXT); t.setBackground(round(user ? Color.rgb(31, 58, 47) : Color.TRANSPARENT, 16)); t.setPadding(dp(12), dp(8), dp(12), dp(8)); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setGravity(user ? Gravity.END : Gravity.START); p.setMargins(user ? dp(42) : 0, dp(5), user ? 0 : dp(42), dp(5)); t.setLayoutParams(p); }
+    private TextView addAssistantBubble(String text) { TextView t = label(requireContext(), text, 15, false); t.setTextIsSelectable(true); messages.addView(t); return t; }
+    private void addAssistant(String text) { bubble(text, false); }
+    private void showThinking(String text) { if (thinkingText != null) thinkingText.setText(text); thinkingPanel.setVisibility(View.VISIBLE); }
+    private void status(String text, int color) { if (statusText != null) { statusText.setText(text); statusText.setTextColor(color); } }
+    private void finishError(String text) { busy = false; thinkingPanel.setVisibility(View.GONE); status(text, Color.rgb(235, 130, 120)); addAssistant(text); }
+    private String preview(String value) { return value.length() > 1600 ? value.substring(0, 1600) + "…" : value; }
+    private void scrollBottom() { if (transcript != null) transcript.post(() -> transcript.fullScroll(View.FOCUS_DOWN)); }
+    private void startHeartbeat() { stopHeartbeat(); heartbeat = () -> { profiles = store.getProfiles(); boolean on = profiles.stream().anyMatch(p -> p.enabled && !p.key.isEmpty()); status(on ? "Connected · auto" : "Offline · add an API profile", on ? MINT : MUTED); main.postDelayed(heartbeat, 30000); }; main.post(heartbeat); }
     private void stopHeartbeat() { if (heartbeat != null) main.removeCallbacks(heartbeat); heartbeat = null; }
-    private void setConnection(String value, int color) { if (connection != null) connection.setText(value); if (dot != null) dot.setTextColor(color); }
-    private void state(String value, boolean ok) { if (status != null) { status.setText(value); status.setTextColor(ok ? Color.rgb(40, 140, 80) : Color.rgb(150, 70, 60)); } }
-    private void updateRate(String remaining, String retry) { if (rate == null) return; if (remaining != null && !remaining.isEmpty()) rate.setText("Remaining " + remaining); else if (retry != null && !retry.isEmpty()) rate.setText("Retry in " + retry + "s"); else rate.setText(""); }
-    private void addUser(String value) { bubble(value, true); }
-    private void addAssistant(String value) { bubble(value, false); }
-    private void bubble(String value, boolean user) { MaterialCardView item = card(); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(user ? dp(40) : 0, dp(4), user ? 0 : dp(40), dp(4)); item.setLayoutParams(p); item.setCardBackgroundColor(user ? Color.rgb(225, 232, 250) : Color.rgb(244, 242, 247)); TextView t = label(requireContext(), value, 14, false); t.setTextIsSelectable(true); t.setPadding(dp(12), dp(10), dp(12), dp(10)); item.addView(t); messages.addView(item); bottom(); }
-    private void bottom() { if (transcript != null) transcript.post(() -> transcript.fullScroll(View.FOCUS_DOWN)); }
-    private static MaterialCardView card(Context c) { MaterialCardView v = new MaterialCardView(c); v.setRadius(18); v.setStrokeWidth(1); v.setStrokeColor(Color.rgb(220, 218, 228)); v.setCardElevation(0); return v; }
-    private MaterialCardView card() { return card(requireContext()); }
-    private static MaterialButton button(Context c, String s) { MaterialButton b = new MaterialButton(c); b.setText(s); b.setMinHeight(dp(c, 44)); return b; }
-    private static TextView label(Context c, String s, int size, boolean bold) { TextView v = new TextView(c); v.setText(s); v.setTextSize(size); v.setTextColor(Color.rgb(35, 34, 42)); v.setTypeface(null, bold ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL); return v; }
-    private static LinearLayout row(Context c) { LinearLayout v = new LinearLayout(c); v.setOrientation(LinearLayout.HORIZONTAL); return v; }
-    private static LinearLayout column(Context c) { LinearLayout v = new LinearLayout(c); v.setOrientation(LinearLayout.VERTICAL); return v; }
-    private static LinearLayout.LayoutParams weight(float w) { return new LinearLayout.LayoutParams(0, -2, w); }
-    private static int dp(Context c, int x) { return Math.round(x * c.getResources().getDisplayMetrics().density); }
-    private int dp(int x) { return dp(requireContext(), x); }
-    private static String text(TextView v) { return v == null ? "" : v.getText().toString().trim(); }
+    private int dp(int value) { return Math.round(value * requireContext().getResources().getDisplayMetrics().density); }
+
+    private static final class Route { final AgentWorkspaceStore.Profile profile; final String model; Route(AgentWorkspaceStore.Profile profile, String model) { this.profile = profile; this.model = model; } }
 }
