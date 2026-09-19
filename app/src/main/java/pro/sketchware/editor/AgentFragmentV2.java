@@ -174,7 +174,7 @@ public final class AgentFragmentV2 extends Fragment {
     private void streamRoute(String request, String original, List<Route> routes, int index) {
         if (index >= routes.size()) { finishError("All configured Gemini profiles or their available quotas failed. Add another profile or wait for reset."); return; }
         Route route = routes.get(index); String key = route.profile.id + ":" + route.model; if (!triedRoutes.add(key)) { streamRoute(request, original, routes, index + 1); return; }
-        status("Connected · " + route.profile.name + " · auto", MINT); showThinking("Dayven AI resesioning..."); final StringBuilder answer = new StringBuilder(); liveAnswer = "";
+        status("Connected · " + route.profile.name + " · auto", MINT); showThinking("Dayven AI resesioning..."); liveAnswer = "";
         client.stream(route.profile.key, route.model, request, new GeminiAutoClient.Listener() {
             @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retryAfter) { }
             @Override public void onDelta(String text) { main.post(() -> { if (liveAssistant == null) liveAssistant = addAssistantBubble(""); liveAnswer += text; liveAssistant.setText(liveAnswer); scrollBottom(); }); }
@@ -184,7 +184,6 @@ public final class AgentFragmentV2 extends Fragment {
     }
 
     private void showProposal(String answer) {
-        AgentWorkspaceStore.Action action = null;
         AgentActionExecutor.Action parsed = AgentActionExecutor.parse(answer);
         LinearLayout box = column(requireContext()); box.setPadding(dp(12), dp(8), dp(12), dp(8)); TextView heading = label(requireContext(), "Proposed change", 13, true); heading.setTextColor(MINT); box.addView(heading); box.addView(label(requireContext(), parsed == null ? "No safe target was found, so nothing can be applied automatically." : "TARGET  " + parsed.target + "\n" + preview(parsed.content), 12, false)); LinearLayout buttons = row(requireContext()); MaterialButton cancel = smallButton("Cancel"); MaterialButton accept = smallButton("Accept"); buttons.addView(cancel, weight(1)); buttons.addView(accept, weight(1)); box.addView(buttons); messages.addView(box); cancel.setOnClickListener(v -> { box.setVisibility(View.GONE); addAssistant("Cancelled. Nothing was changed."); }); accept.setOnClickListener(v -> { box.setVisibility(View.GONE); accept(parsed); }); scrollBottom();
     }
@@ -215,7 +214,7 @@ public final class AgentFragmentV2 extends Fragment {
     private GradientDrawable round(int color, int radius) { GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
     private TextView bubbleText(String text, boolean user) { TextView t = label(requireContext(), text, 15, false); t.setTextColor(TEXT); t.setTextIsSelectable(true); t.setMaxWidth(Math.round(requireContext().getResources().getDisplayMetrics().widthPixels * 0.82f)); t.setPadding(dp(14), dp(10), dp(14), dp(10)); t.setBackground(round(user ? Color.rgb(31, 58, 47) : SURFACE_2, 18)); return t; }
     private TextView avatar() { TextView a = label(requireContext(), "✦", 13, true); a.setGravity(Gravity.CENTER); a.setTextColor(MINT); a.setBackground(round(SURFACE_2, 18)); a.setContentDescription("Dayven AI"); return a; }
-    private void bubble(String text, boolean user) { LinearLayout line = row(requireContext()); line.setGravity(user ? Gravity.END : Gravity.START | Gravity.CENTER_VERTICAL); if (!user) line.addView(avatar(), new LinearLayout.LayoutParams(dp(36), dp(36))); TextView t = bubbleText(text, user); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.setMargins(user ? dp(48) : dp(8), 0, user ? 0 : dp(48), 0); line.addView(t, p); messages.addView(line, new LinearLayout.LayoutParams(-1, -2)); }
+    private void bubble(String text, boolean user) { LinearLayout line = row(requireContext()); line.setGravity(user ? Gravity.END : (Gravity.START | Gravity.CENTER_VERTICAL)); if (!user) line.addView(avatar(), new LinearLayout.LayoutParams(dp(36), dp(36))); TextView t = bubbleText(text, user); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.setMargins(user ? dp(48) : dp(8), 0, user ? 0 : dp(48), 0); line.addView(t, p); messages.addView(line, new LinearLayout.LayoutParams(-1, -2)); }
     private TextView addAssistantBubble(String text) { LinearLayout line = row(requireContext()); line.setGravity(Gravity.START | Gravity.CENTER_VERTICAL); line.addView(avatar(), new LinearLayout.LayoutParams(dp(36), dp(36))); TextView t = bubbleText(text, false); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.setMargins(dp(8), 0, dp(48), 0); line.addView(t, p); messages.addView(line, new LinearLayout.LayoutParams(-1, -2)); return t; }
     private void addAssistant(String text) { bubble(text, false); }
     private void showThinking(String text) { if (thinkingText != null) thinkingText.setText(text); thinkingPanel.setVisibility(View.VISIBLE); }
