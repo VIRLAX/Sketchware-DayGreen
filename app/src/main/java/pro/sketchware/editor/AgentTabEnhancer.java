@@ -51,8 +51,16 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         if (existing != null) manager.beginTransaction().remove(existing).commitNowAllowingStateLoss();
         manager.beginTransaction().replace(agentContainer.getId(), AgentFragmentV2.newInstance(projectId, selectedFile), FRAGMENT_TAG).commitNowAllowingStateLoss();
 
-        // The legacy pager has three pages. Detach its TabLayout listener and route four tabs manually.
+        int currentPage = pager.getCurrentItem();
+        CharSequence[] originalTitles = new CharSequence[Math.min(3, tabs.getTabCount())];
+        for (int i = 0; i < originalTitles.length; i++) {
+            TabLayout.Tab tab = tabs.getTabAt(i);
+            originalTitles[i] = tab == null || tab.getText() == null ? String.valueOf(i + 1) : tab.getText();
+        }
+        // Detach the legacy ViewPager listener, rebuild four visible tabs, and route them manually.
         tabs.setupWithViewPager(null);
+        tabs.removeAllTabs();
+        for (CharSequence title : originalTitles) tabs.addTab(tabs.newTab().setText(title), false);
         TabLayout.Tab agentTab = tabs.newTab().setText("Agent");
         tabs.addTab(agentTab, false);
         final boolean[] syncing = {false};
@@ -84,7 +92,7 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
                 pager.setVisibility(View.VISIBLE);
             }
         });
-        TabLayout.Tab selected = tabs.getTabAt(Math.min(pager.getCurrentItem(), tabs.getTabCount() - 2));
+        TabLayout.Tab selected = tabs.getTabAt(Math.min(currentPage, tabs.getTabCount() - 2));
         if (selected != null) selected.select();
     }
 
