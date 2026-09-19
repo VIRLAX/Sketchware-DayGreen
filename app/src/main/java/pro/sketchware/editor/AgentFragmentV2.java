@@ -118,10 +118,10 @@ public final class AgentFragmentV2 extends Fragment {
         root.addView(agent, new FrameLayout.LayoutParams(-1, -1));
 
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
-            Insets nav = insets.getInsets(WindowInsetsCompat.Type.navigationBars() | WindowInsetsCompat.Type.displayCutout());
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars() | WindowInsetsCompat.Type.displayCutout());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-            int bottomInset = Math.max(nav.bottom, ime.bottom);
-            agent.setPadding(dp(12), dp(8), dp(12), dp(8) + bottomInset);
+            int bottomInset = Math.max(bars.bottom, ime.bottom);
+            agent.setPadding(dp(12), bars.top + dp(40), dp(12), dp(8) + bottomInset);
             if (ime.bottom > 0) {
                 root.postDelayed(() -> {
                     scrollBottom();
