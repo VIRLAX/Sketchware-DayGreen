@@ -22,8 +22,10 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 
+import com.besome.sketch.beans.BlockBean;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -37,6 +39,7 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     private static final long POLL_MS = 650L;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<com.besome.sketch.editor.LogicEditorActivity, State> states = new WeakHashMap<>();
+    private final Map<com.besome.sketch.editor.LogicEditorActivity, PendingImport> pendingImports = new WeakHashMap<>();
 
     @Override public void onActivityCreated(@NonNull Activity activity, Bundle savedInstanceState) {
         if (activity instanceof com.besome.sketch.editor.LogicEditorActivity editor) {
@@ -187,13 +190,30 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
                     Toast.makeText(activity, "No statements found", Toast.LENGTH_SHORT).show();
                     return;
                 }
-                jC.a(activity.scId).a(activity.M.getJavaName(), activity.id + "_" + activity.eventName, result.blocks);
-                jC.a(activity.scId).h();
+
+                PendingImport pending = new PendingImport(
+                        activity.scId,
+                        activity.M.getJavaName(),
+                        activity.id + "_" + activity.eventName,
+                        result.blocks
+                );
+                pendingImports.put(activity, pending);
+                persist(pending);
                 dialog.dismiss();
-                activity.recreate();
+                // The old canvas is still alive until recreate() saves it. The pending import is
+                // re-applied from onActivitySaveInstanceState after that stale canvas write, so
+                // the generated class and the reopened block editor read the same source of truth.
+                activity.getWindow().getDecorView().post(activity::recreate);
             });
         });
         dialog.show();
+    }
+
+    private static void persist(PendingImport pending) {
+        jC.a(pending.scId).a(pending.javaName, pending.eventKey, pending.blocks);
+        // Reference Sketchware flushes eC with k(). h() is a load/init path and was the reason
+        // imported blocks could appear installed yet disappear when the generated class reloaded.
+        jC.a(pending.scId).k();
     }
 
     private static String buildSource(com.besome.sketch.editor.LogicEditorActivity activity) {
@@ -213,11 +233,34 @@ final class LogicEditorEnhancer implements Application.ActivityLifecycleCallback
     @Override public void onActivityDestroyed(@NonNull Activity activity) {
         State state = states.remove(activity);
         if (state != null && state.poll != null) handler.removeCallbacks(state.poll);
+        if (activity instanceof com.besome.sketch.editor.LogicEditorActivity) {
+            pendingImports.remove(activity);
+        }
     }
+
     @Override public void onActivityStarted(@NonNull Activity activity) { }
     @Override public void onActivityPaused(@NonNull Activity activity) { }
     @Override public void onActivityStopped(@NonNull Activity activity) { }
-    @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) { }
+
+    @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
+        if (!(activity instanceof com.besome.sketch.editor.LogicEditorActivity editor)) return;
+        PendingImport pending = pendingImports.remove(editor);
+        if (pending != null) persist(pending);
+    }
+
+    private static final class PendingImport {
+        final String scId;
+        final String javaName;
+        final String eventKey;
+        final ArrayList<BlockBean> blocks;
+
+        PendingImport(String scId, String javaName, String eventKey, ArrayList<BlockBean> blocks) {
+            this.scId = scId;
+            this.javaName = javaName;
+            this.eventKey = eventKey;
+            this.blocks = blocks;
+        }
+    }
 
     private static final class State {
         final com.besome.sketch.editor.LogicEditorActivity activity;
