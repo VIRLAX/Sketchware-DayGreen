@@ -53,6 +53,9 @@ public final class AgentActionExecutor {
         try {
             String rootPath = root.getCanonicalPath(), filePath = file.getCanonicalPath();
             if (!filePath.equals(rootPath) && !filePath.startsWith(rootPath + File.separator)) return "Rejected target outside project source root.";
+            boolean existed = file.isFile();
+            String previous = existed ? new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8) : "";
+            AgentUndoJournal.saveFile(scId, filePath, existed, previous);
             File parent = file.getParentFile();
             if (parent != null && !parent.exists() && !parent.mkdirs()) return "Could not create target directory.";
             Files.write(file.toPath(), action.content.getBytes(StandardCharsets.UTF_8));
@@ -60,5 +63,10 @@ public final class AgentActionExecutor {
         } catch (Exception e) {
             return "Write failed: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         }
+    }
+
+    public static String revertLast(Context context, String scId) {
+        if (scId == null || scId.trim().isEmpty()) return "No project is selected.";
+        return AgentUndoJournal.revert(scId);
     }
 }
