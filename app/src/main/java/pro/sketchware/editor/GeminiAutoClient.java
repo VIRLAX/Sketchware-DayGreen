@@ -32,18 +32,14 @@ public final class GeminiAutoClient {
     }
 
     public static final class ModelInfo {
-        public final String name;
-        public final String displayName;
-        public final List<String> methods;
+        public final String name; public final String displayName; public final List<String> methods;
         public ModelInfo(String name, String displayName, List<String> methods) { this.name = name; this.displayName = displayName; this.methods = methods; }
         public boolean text() { return methods.contains("generateContent"); }
         public String id() { return name.replace("models/", ""); }
     }
 
     public static final class Usage {
-        public final int input;
-        public final int output;
-        public final int total;
+        public final int input; public final int output; public final int total;
         public Usage(int input, int output, int total) { this.input = input; this.output = output; this.total = total; }
         public String label() { return total <= 0 ? "" : total + " tokens"; }
     }
@@ -67,7 +63,8 @@ public final class GeminiAutoClient {
 
     public void stream(String apiKey, String model, String prompt, Listener listener) {
         JSONObject payload = new JSONObject();
-        try { payload.put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray().put(new JSONObject().put("text", prompt))))); payload.put("generationConfig", new JSONObject().put("temperature", 0.2).put("maxOutputTokens", 8192)); }
+        int outputTokens = prompt != null && prompt.length() > 6000 ? 4096 : 1536;
+        try { payload.put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray().put(new JSONObject().put("text", prompt))))); payload.put("generationConfig", new JSONObject().put("temperature", 0.2).put("maxOutputTokens", outputTokens)); }
         catch (Exception e) { listener.onError(0, message(e), "", ""); return; }
         Request r = new Request.Builder().url(ROOT + modelPath(model) + ":streamGenerateContent?alt=sse&key=" + enc(apiKey)).post(RequestBody.create(JSON, payload.toString())).build();
         http.newCall(r).enqueue(new Callback() {
