@@ -24,6 +24,9 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 
 import com.google.android.material.button.MaterialButton;
@@ -95,6 +98,15 @@ public final class AgentFragmentV2 extends Fragment {
     private View build(Context c) {
         FrameLayout root = new FrameLayout(c); root.setBackgroundColor(BG);
         LinearLayout agent = column(c); agent.setPadding(dp(16), dp(10), dp(16), dp(10)); root.addView(agent, new FrameLayout.LayoutParams(-1, -1));
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            int bottomInset = Math.max(bars.bottom, ime.bottom);
+            agent.setPadding(dp(16), dp(10) + bars.top, dp(16), dp(10) + bottomInset);
+            if (ime.bottom > 0 && transcript != null) transcript.post(() -> transcript.fullScroll(View.FOCUS_DOWN));
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(root);
         LinearLayout header = row(c); header.setGravity(Gravity.CENTER_VERTICAL);
         MaterialButton menu = iconButton(c, "☰", "Chat menu"); menu.setOnClickListener(v -> showMenu(menu)); header.addView(menu, new LinearLayout.LayoutParams(dp(44), dp(44)));
         LinearLayout titleBox = column(c); titleBox.setGravity(Gravity.CENTER_VERTICAL); sessionTitle = label(c, session.title, 16, true); titleBox.addView(sessionTitle); TextView sub = label(c, "Dayven AI", 11, false); sub.setTextColor(MUTED); titleBox.addView(sub); header.addView(titleBox, weight(1));
@@ -105,7 +117,7 @@ public final class AgentFragmentV2 extends Fragment {
 
         transcript = new ScrollView(c); transcript.setFillViewport(true); messages = column(c); messages.setPadding(0, dp(8), 0, dp(8)); transcript.addView(messages, new ViewGroup.LayoutParams(-1, -2)); agent.addView(transcript, new LinearLayout.LayoutParams(-1, 0, 1));
         thinkingPanel = buildThinking(c); thinkingPanel.setVisibility(View.GONE); agent.addView(thinkingPanel);
-        LinearLayout composerRow = row(c); composerRow.setGravity(Gravity.BOTTOM); composer = new EditText(c); composer.setHint("Ask Dayven AI anything..."); composer.setHintTextColor(Color.rgb(111, 127, 118)); composer.setTextColor(TEXT); composer.setTextSize(15); composer.setGravity(Gravity.TOP | Gravity.START); composer.setPadding(dp(14), dp(12), dp(12), dp(12)); composer.setMinLines(1); composer.setMaxLines(5); composer.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE); composer.setBackground(round(SURFACE, 18)); composerRow.addView(composer, weight(1)); MaterialButton send = iconButton(c, "↑", "Send"); send.setTextColor(BG); send.setBackgroundTintList(android.content.res.ColorStateList.valueOf(MINT)); send.setOnClickListener(v -> send()); composerRow.addView(send, new LinearLayout.LayoutParams(dp(48), dp(48))); agent.addView(composerRow);
+        LinearLayout composerRow = row(c); composerRow.setGravity(Gravity.BOTTOM); composer = new EditText(c); composer.setHint("Ask Dayven AI anything..."); composer.setHintTextColor(Color.rgb(111, 127, 118)); composer.setTextColor(TEXT); composer.setTextSize(15); composer.setGravity(Gravity.TOP | Gravity.START); composer.setPadding(dp(14), dp(12), dp(12), dp(12)); composer.setMinLines(1); composer.setMaxLines(5); composer.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE); composer.setBackground(round(SURFACE, 18)); composer.setOnFocusChangeListener((v, hasFocus) -> { if (hasFocus) v.postDelayed(() -> { ViewCompat.requestApplyInsets(root); if (transcript != null) transcript.fullScroll(View.FOCUS_DOWN); }, 160); }); composerRow.addView(composer, weight(1)); MaterialButton send = iconButton(c, "↑", "Send"); send.setTextColor(BG); send.setBackgroundTintList(android.content.res.ColorStateList.valueOf(MINT)); send.setOnClickListener(v -> send()); composerRow.addView(send, new LinearLayout.LayoutParams(dp(48), dp(48))); agent.addView(composerRow);
         restoreSession(); return root;
     }
 
