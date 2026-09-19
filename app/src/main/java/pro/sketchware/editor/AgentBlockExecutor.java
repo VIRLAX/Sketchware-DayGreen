@@ -24,9 +24,11 @@ public final class AgentBlockExecutor {
         String eventKey = spec.substring(separator + 1);
         if (javaName.contains("..") || eventKey.contains("..")) return "Unsafe block target.";
         try {
+            eC manager = jC.a(scId);
+            ArrayList<BlockBean> previous = manager.a(javaName, eventKey);
             ArrayList<BlockBean> blocks = new Gson().fromJson(json, new TypeToken<ArrayList<BlockBean>>() { }.getType());
             if (blocks == null) return "Block JSON was empty.";
-            eC manager = jC.a(scId);
+            AgentUndoJournal.saveBlocks(scId, javaName, eventKey, previous == null ? new ArrayList<>() : previous);
             manager.a(javaName, eventKey, blocks);
             manager.k();
             return "APPLIED_BLOCKS:" + javaName + "/" + eventKey + " (" + blocks.size() + " blocks)";
