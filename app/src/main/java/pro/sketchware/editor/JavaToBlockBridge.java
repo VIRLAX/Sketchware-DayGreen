@@ -11,14 +11,12 @@ import java.util.Collections;
 import a.a.a.kq;
 
 /**
- * Imports Java event code as guaranteed-renderable Sketchware command blocks.
+ * Imports Java event bodies as guaranteed-renderable Sketchware command blocks.
  *
- * A Java statement and a Sketchware block are not interchangeable: a block's
- * opcode/spec must exist in the active palette or the editor can persist it
- * and then render only the event header after reload. Until a native mapping
- * is verified against the active palette, this bridge deliberately uses the
- * built-in addSourceDirectly command block. That guarantees that every valid
- * Java statement is visible and never silently discarded.
+ * Full generated Activity source is not an event body. The reference editor treats
+ * that source as a class override, so this bridge detects it and refuses to
+ * replace event blocks with the class text. Event imports use an ID range above
+ * the event header blocks to avoid overwriting getArg blocks during reload.
  */
 public final class JavaToBlockBridge {
     private static final String RAW_SPEC = "add source directly %s.inputOnly";
@@ -27,10 +25,10 @@ public final class JavaToBlockBridge {
 
     public static Analysis analyze(String source) {
         try {
-            BlockStmt body = parseBody(source);
+            ParsedBody parsed = parseSource(source);
             ArrayList<String> statements = new ArrayList<>();
-            for (Statement statement : body.getStatements()) statements.add(statement.toString());
-            return new Analysis(true, 0, 0, "", statements);
+            for (Statement statement : parsed.body.getStatements()) statements.add(statement.toString());
+            return new Analysis(true, 0, 0, "", statements, parsed.fullSource);
         } catch (Throwable error) {
             int line = 1;
             int column = 1;
@@ -44,18 +42,24 @@ public final class JavaToBlockBridge {
                     column = range.begin.column;
                 }
             }
-            return new Analysis(false, line, column, clean(error.getMessage()), Collections.emptyList());
+            return new Analysis(false, line, column, clean(error.getMessage()),
+                    Collections.emptyList(), looksLikeClassSource(source));
         }
     }
 
     public static ImportResult toBlocks(String source) {
+        return toBlocks(source, 1);
+    }
+
+    /** Convert using an ID range that cannot collide with the event header blocks. */
+    public static ImportResult toBlocks(String source, int firstId) {
         Analysis analysis = analyze(source);
-        if (!analysis.valid) return new ImportResult(analysis, new ArrayList<>());
+        if (!analysis.valid || analysis.fullSource) return new ImportResult(analysis, new ArrayList<>());
 
         ArrayList<BlockBean> blocks = new ArrayList<>();
         try {
-            BlockStmt body = parseBody(source);
-            int id = 1;
+            BlockStmt body = parseSource(source).body;
+            int id = Math.max(1, firstId);
             for (Statement statement : body.getStatements()) {
                 blocks.add(rawBean(statement.toString(), id++));
             }
@@ -68,9 +72,59 @@ public final class JavaToBlockBridge {
         } catch (Throwable error) {
             return new ImportResult(new Analysis(false, 1, 1,
                     "Unable to convert this Java body: " + clean(error.getMessage()),
-                    Collections.emptyList()), blocks);
+                    Collections.emptyList(), false), blocks);
         }
         return new ImportResult(analysis, blocks);
+    }
+
+    private static ParsedBody parseSource(String source) {
+        String text = source == null ? "" : source.trim();
+        if (looksLikeClassSource(text)) {
+            String methodBody = extractMethodBody(text, "initializeLogic");
+            if (methodBody == null) methodBody = extractMethodBody(text, "onCreate");
+            if (methodBody == null) {
+                throw new IllegalArgumentException(
+                        "Full Java class detected. Use Edit generated Java class instead of Java to Blocks.");
+            }
+            return new ParsedBody(parseBody(methodBody), true);
+        }
+        return new ParsedBody(parseBody(text), false);
+    }
+
+    private static boolean looksLikeClassSource(String source) {
+        if (source == null) return false;
+        String text = source.trim();
+        return text.startsWith("package ") || text.startsWith("import ")
+                || text.contains(" class ") || text.startsWith("class ")
+                || text.contains("public class ");
+    }
+
+    private static String extractMethodBody(String source, String methodName) {
+        int method = source.indexOf(methodName + "(");
+        if (method < 0) return null;
+        int open = source.indexOf('{', method);
+        if (open < 0) return null;
+        int depth = 0;
+        boolean quoted = false;
+        boolean escaped = false;
+        for (int i = open; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (quoted) {
+                if (escaped) escaped = false;
+                else if (c == '\\') escaped = true;
+                else if (c == '"') quoted = false;
+                continue;
+            }
+            if (c == '"') {
+                quoted = true;
+                continue;
+            }
+            if (c == '{') depth++;
+            else if (c == '}' && --depth == 0) {
+                return source.substring(open + 1, i);
+            }
+        }
+        return null;
     }
 
     private static BlockStmt parseBody(String source) {
@@ -92,19 +146,31 @@ public final class JavaToBlockBridge {
         return newline >= 0 ? message.substring(0, newline) : message;
     }
 
+    private static final class ParsedBody {
+        final BlockStmt body;
+        final boolean fullSource;
+        ParsedBody(BlockStmt body, boolean fullSource) {
+            this.body = body;
+            this.fullSource = fullSource;
+        }
+    }
+
     public static final class Analysis {
         public final boolean valid;
         public final int line;
         public final int column;
         public final String message;
         public final java.util.List<String> unsupported;
+        public final boolean fullSource;
 
-        Analysis(boolean valid, int line, int column, String message, java.util.List<String> unsupported) {
+        Analysis(boolean valid, int line, int column, String message,
+                 java.util.List<String> unsupported, boolean fullSource) {
             this.valid = valid;
             this.line = line;
             this.column = column;
             this.message = message;
             this.unsupported = unsupported;
+            this.fullSource = fullSource;
         }
     }
 
