@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -28,6 +29,7 @@ import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
@@ -59,10 +61,9 @@ import pro.sketchware.activities.editor.view.ViewCodeEditorActivity;
  * Dayven AI Agent - iOS styled dark chat workspace.
  *
  * Layout contract:
- * - The header bar never slides under the device status bar / control center. Its top padding
- *   always equals the real status bar height while the agent runs in expanded mode.
- * - Header is a single horizontal row (menu | title | actions) so nothing can overlap.
- * - Every message, the typing indicator and the drawer animate in softly.
+ * - Header parked below control center / system status bar.
+ * - Composer adjusts cleanly above keyboard without getting obscured.
+ * - Multi-API management with persistent profiles and auto-routing.
  */
 public final class AgentFragmentV2 extends Fragment {
     // iOS dark system palette
@@ -95,6 +96,7 @@ public final class AgentFragmentV2 extends Fragment {
     private List<AgentWorkspaceStore.Profile> profiles = new ArrayList<>();
 
     private FrameLayout root;
+    private LinearLayout shell;
     private LinearLayout header;
     private LinearLayout messages;
     private ScrollView transcript;
@@ -121,6 +123,7 @@ public final class AgentFragmentV2 extends Fragment {
     private ObjectAnimator pulseAnimator;
     private FrameLayout activeSettingsPage;
     private FrameLayout activeDrawerOverlay;
+    private ViewTreeObserver.OnGlobalLayoutListener keyboardLayoutListener;
 
     public static AgentFragmentV2 newInstance(String projectId, String selectedFile) {
         AgentFragmentV2 f = new AgentFragmentV2();
@@ -144,14 +147,23 @@ public final class AgentFragmentV2 extends Fragment {
 
     @Override public void onResume() {
         super.onResume();
+        profiles = store.getProfiles();
         startHeartbeat();
         applyTopInset();
+        restoreSession();
     }
 
     @Override public void onPause() {
         stopHeartbeat();
         stopDots();
         super.onPause();
+    }
+
+    @Override public void onDestroyView() {
+        if (root != null && keyboardLayoutListener != null) {
+            root.getViewTreeObserver().removeOnGlobalLayoutListener(keyboardLayoutListener);
+        }
+        super.onDestroyView();
     }
 
     /** Called by the host when the Agent tab becomes visible. */
@@ -162,6 +174,9 @@ public final class AgentFragmentV2 extends Fragment {
         if (act != null) AgentTabEnhancer.setExpanded(act, true);
         if (expandButton != null) expandButton.setText("\u2921");
         applyTopInset();
+        profiles = store.getProfiles();
+        startHeartbeat();
+        restoreSession();
     }
 
     private View build(Context c) {
@@ -169,7 +184,7 @@ public final class AgentFragmentV2 extends Fragment {
         root.setLayoutParams(new ViewGroup.LayoutParams(-1, -1));
         root.setBackgroundColor(BG_DARK);
 
-        LinearLayout shell = column(c);
+        shell = column(c);
         shell.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
 
         shell.addView(buildHeader(c), new LinearLayout.LayoutParams(-1, -2));
@@ -188,6 +203,7 @@ public final class AgentFragmentV2 extends Fragment {
 
         root.addView(shell);
 
+        // Hybrid WindowInsets + OnGlobalLayoutListener for rock-solid keyboard handling
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
@@ -195,9 +211,26 @@ public final class AgentFragmentV2 extends Fragment {
             int bottom = Math.max(bars.bottom, ime.bottom);
             composerRow.setPadding(dp(12), dp(8), dp(12), bottom + dp(10));
             applyTopInset();
+            if (bottom > dp(60)) scrollBottom();
             return insets;
         });
         ViewCompat.requestApplyInsets(root);
+
+        // Fallback detector using visible display frame to guarantee lifting above keyboard on any device/ROM
+        keyboardLayoutListener = () -> {
+            if (root == null || composerRow == null) return;
+            Rect r = new Rect();
+            root.getWindowVisibleDisplayFrame(r);
+            int screenHeight = root.getRootView().getHeight();
+            int keypadHeight = screenHeight - r.bottom;
+            if (keypadHeight > screenHeight * 0.15) { // Keyboard is open
+                composerRow.setPadding(dp(12), dp(8), dp(12), keypadHeight + dp(10));
+                scrollBottom();
+            } else {
+                composerRow.setPadding(dp(12), dp(8), dp(12), dp(10));
+            }
+        };
+        root.getViewTreeObserver().addOnGlobalLayoutListener(keyboardLayoutListener);
 
         restoreSession();
         applyTopInset();
@@ -341,6 +374,12 @@ public final class AgentFragmentV2 extends Fragment {
             @Override public void afterTextChanged(Editable s) { }
         });
 
+        composer.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                main.postDelayed(this::scrollBottom, 250);
+            }
+        });
+
         return bar;
     }
 
@@ -356,13 +395,23 @@ public final class AgentFragmentV2 extends Fragment {
     private void restoreSession() {
         messages.removeAllViews();
         profiles = store.getProfiles();
+        boolean active = hasActiveKey(profiles);
         if (session.messages.isEmpty()) {
-            boolean active = profiles.stream().anyMatch(p -> p.enabled && !p.key.isEmpty());
             bubble(active ? GREETING : NO_KEY, false);
         } else {
             for (AgentWorkspaceStore.Message m : session.messages) bubble(m.text, "user".equals(m.role));
         }
         scrollBottom();
+    }
+
+    private boolean hasActiveKey(List<AgentWorkspaceStore.Profile> list) {
+        if (list == null) return false;
+        for (AgentWorkspaceStore.Profile p : list) {
+            if (p.enabled && p.key != null && !p.key.trim().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void addAssistant(String text) {
@@ -375,7 +424,7 @@ public final class AgentFragmentV2 extends Fragment {
         if (prompt.isEmpty()) return;
 
         profiles = store.getProfiles();
-        if (profiles.stream().noneMatch(p -> p.enabled && !p.key.isEmpty())) {
+        if (!hasActiveKey(profiles)) {
             addAssistant("API Key belum dikonfigurasi. Silakan buka Settings untuk menambahkan API Key Gemini.");
             showSettings();
             return;
@@ -450,7 +499,7 @@ public final class AgentFragmentV2 extends Fragment {
         }
 
         AgentWorkspaceStore.Profile p = profiles.get(index);
-        if (!p.enabled || p.key.isEmpty() || !p.models.isEmpty()) {
+        if (!p.enabled || p.key == null || p.key.trim().isEmpty() || !p.models.isEmpty()) {
             runDiscoveryThenRoute(request, original, index + 1);
             return;
         }
@@ -491,7 +540,7 @@ public final class AgentFragmentV2 extends Fragment {
         else if (prompt.length() < 50) tier = 0;
 
         for (AgentWorkspaceStore.Profile p : profiles) {
-            if (!p.enabled || p.key.isEmpty()) continue;
+            if (!p.enabled || p.key == null || p.key.trim().isEmpty()) continue;
             List<String> models = new ArrayList<>(p.models);
             if (models.isEmpty()) {
                 models.add("gemini-1.5-flash");
@@ -838,6 +887,8 @@ public final class AgentFragmentV2 extends Fragment {
             page.animate().alpha(0f).setDuration(160).withEndAction(() -> {
                 root.removeView(page);
                 activeSettingsPage = null;
+                profiles = store.getProfiles();
+                startHeartbeat();
                 restoreSession();
             }).start();
         });
@@ -932,6 +983,7 @@ public final class AgentFragmentV2 extends Fragment {
                 bounce(v);
                 String currentKey = key.getText().toString().trim();
                 p.key = currentKey;
+                p.enabled = true;
                 store.saveProfiles(profiles);
                 if (currentKey.isEmpty()) {
                     Toast.makeText(requireContext(), "Masukkan API Key terlebih dahulu", Toast.LENGTH_SHORT).show();
@@ -960,7 +1012,7 @@ public final class AgentFragmentV2 extends Fragment {
             @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) {
                 p.models.clear();
                 for (GeminiAutoClient.ModelInfo m : models) if (m.text()) p.models.add(m.id());
-                p.enabled = !p.models.isEmpty();
+                p.enabled = true;
                 p.lastError = "";
                 p.rate = remaining;
                 store.saveProfiles(profiles);
@@ -1001,7 +1053,7 @@ public final class AgentFragmentV2 extends Fragment {
         stopHeartbeat();
         heartbeat = () -> {
             profiles = store.getProfiles();
-            boolean active = profiles.stream().anyMatch(p -> p.enabled && !p.key.isEmpty() && !p.models.isEmpty());
+            boolean active = hasActiveKey(profiles);
             if (statusText != null) {
                 statusText.setText(active ? "Connected \u00B7 Gemini" : "Disconnected");
                 statusText.setTextColor(active ? IOS_GREEN : IOS_RED);
@@ -1112,7 +1164,9 @@ public final class AgentFragmentV2 extends Fragment {
     }
 
     private void scrollBottom() {
-        transcript.post(() -> transcript.smoothScrollTo(0, messages.getHeight()));
+        if (transcript != null && messages != null) {
+            transcript.post(() -> transcript.smoothScrollTo(0, messages.getHeight() + dp(120)));
+        }
     }
 
     private CharSequence richText(String value) {
