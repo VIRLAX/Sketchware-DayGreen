@@ -3,23 +3,18 @@ package pro.sketchware.editor;
 import android.app.Activity;
 import android.app.Application;
 import android.os.Bundle;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
 import androidx.viewpager.widget.ViewPager;
 
-import com.google.android.material.button.MaterialButton;
 import com.google.android.material.tabs.TabLayout;
 
 import java.util.Map;
@@ -28,7 +23,12 @@ import java.util.WeakHashMap;
 import pro.sketchware.R;
 
 /**
- * Installs Dayven AI Agent with fullscreen immersive support (under system status bar/control center).
+ * Installs the Dayven AI Agent page.
+ *
+ * The agent view lives inside the existing coordinator area, so "minimized" mode keeps the
+ * host toolbar and run bar visible exactly like the stock editor. "Expanded" mode hides those
+ * two host bars only, letting the agent fill the screen while its own header still starts
+ * right below the device status bar / control center.
  */
 public final class AgentTabEnhancer implements Application.ActivityLifecycleCallbacks {
     private static final String FRAGMENT_TAG = "daygreen_gemini_agent_tab";
@@ -46,18 +46,34 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         if (hook != null) hook.restore(activity);
     }
 
+    /** Hides or restores the host app bar and bottom run bar with a soft fade. */
     public static void setExpanded(Activity activity, boolean expanded) {
         if (activity == null) return;
-        View appBar = activity.findViewById(R.id.tab_layout);
-        View bottomBar = activity.findViewById(R.id.bottom_bar);
-        View parentAppBar = appBar != null && appBar.getParent() instanceof View ? (View) appBar.getParent() : null;
-        View parentBottomBar = bottomBar != null && bottomBar.getParent() instanceof View ? (View) bottomBar.getParent() : null;
+        View appBar = parentOf(activity.findViewById(R.id.tab_layout));
+        View bottomBar = parentOf(activity.findViewById(R.id.bottom_bar));
+        fadeTo(appBar, expanded);
+        fadeTo(bottomBar, expanded);
+    }
 
-        if (parentAppBar != null) {
-            parentAppBar.setVisibility(expanded ? View.GONE : View.VISIBLE);
-        }
-        if (parentBottomBar != null) {
-            parentBottomBar.setVisibility(expanded ? View.GONE : View.VISIBLE);
+    private static View parentOf(View child) {
+        return child != null && child.getParent() instanceof View ? (View) child.getParent() : null;
+    }
+
+    private static void fadeTo(View view, boolean hidden) {
+        if (view == null) return;
+        if (hidden) {
+            if (view.getVisibility() == View.GONE) return;
+            view.animate().cancel();
+            view.animate().alpha(0f).setDuration(140).withEndAction(() -> {
+                view.setVisibility(View.GONE);
+                view.setAlpha(1f);
+            }).start();
+        } else {
+            if (view.getVisibility() == View.VISIBLE) return;
+            view.animate().cancel();
+            view.setAlpha(0f);
+            view.setVisibility(View.VISIBLE);
+            view.animate().alpha(1f).setDuration(180).start();
         }
     }
 
@@ -66,9 +82,8 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         activity.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         TabLayout tabs = activity.findViewById(R.id.tab_layout);
         ViewPager pager = activity.findViewById(R.id.viewpager);
-        ViewGroup rootContainer = activity.findViewById(R.id.container);
-        if (rootContainer == null) rootContainer = activity.findViewById(R.id.layout_coordinator);
-        if (tabs == null || pager == null || rootContainer == null || attachedContainers.containsKey(activity)) return;
+        ViewGroup host = activity.findViewById(R.id.layout_coordinator);
+        if (tabs == null || pager == null || host == null || attachedContainers.containsKey(activity)) return;
 
         FrameLayout agentContainer = new FrameLayout(activity);
         agentContainer.setId(View.generateViewId());
@@ -76,7 +91,7 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         agentContainer.setClipChildren(true);
         agentContainer.setClipToPadding(true);
         agentContainer.setFitsSystemWindows(false);
-        rootContainer.addView(agentContainer, new ViewGroup.LayoutParams(-1, -1));
+        host.addView(agentContainer, new ViewGroup.LayoutParams(-1, -1));
         attachedContainers.put(activity, agentContainer.getId());
 
         String projectId = activity.getIntent().getStringExtra("sc_id");
@@ -105,7 +120,9 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
                 if (tab == agentTab) {
                     pager.setVisibility(View.GONE);
                     agentContainer.setVisibility(View.VISIBLE);
-                    setExpanded(activity, true);
+                    agentContainer.setAlpha(0f);
+                    agentContainer.animate().alpha(1f).setDuration(200).start();
+                    notifyAgent(activity, true);
                 } else {
                     agentContainer.setVisibility(View.GONE);
                     pager.setVisibility(View.VISIBLE);
@@ -113,11 +130,11 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
                     pager.setCurrentItem(Math.min(tab.getPosition(), Math.max(0, pager.getAdapter() == null ? 0 : pager.getAdapter().getCount() - 1)), false);
                 }
             }
-            @Override public void onTabUnselected(TabLayout.Tab tab) { 
-                if (tab == agentTab) { 
-                    agentContainer.setVisibility(View.GONE); 
+            @Override public void onTabUnselected(TabLayout.Tab tab) {
+                if (tab == agentTab) {
+                    agentContainer.setVisibility(View.GONE);
                     setExpanded(activity, false);
-                } 
+                }
             }
             @Override public void onTabReselected(TabLayout.Tab tab) { }
         });
@@ -138,6 +155,11 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         if (selected != null) selected.select();
     }
 
+    private void notifyAgent(FragmentActivity activity, boolean opened) {
+        Fragment fragment = activity.getSupportFragmentManager().findFragmentByTag(FRAGMENT_TAG);
+        if (fragment instanceof AgentFragmentV2) ((AgentFragmentV2) fragment).onAgentTabOpened(opened);
+    }
+
     private void restore(Activity activity) {
         setExpanded(activity, false);
         TabLayout tabs = activity.findViewById(R.id.tab_layout);
@@ -148,7 +170,6 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         }
     }
 
-    private static int dp(Activity activity, int value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
     @Override public void onActivityStarted(@NonNull Activity activity) { }
     @Override public void onActivityResumed(@NonNull Activity activity) { }
     @Override public void onActivityPaused(@NonNull Activity activity) { }
