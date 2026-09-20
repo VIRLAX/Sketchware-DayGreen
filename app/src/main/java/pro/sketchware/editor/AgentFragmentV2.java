@@ -31,6 +31,13 @@ import androidx.fragment.app.Fragment;
 
 import com.google.android.material.button.MaterialButton;
 
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
+import android.text.style.TypefaceSpan;
+
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -45,14 +52,17 @@ import pro.sketchware.activities.editor.view.ViewCodeEditorActivity;
 
 /** Dayven AI chat, multi-API Gemini setup, sessions, model routing, and guarded proposals. */
 public final class AgentFragmentV2 extends Fragment {
-    private static final int BG = Color.rgb(10, 10, 10);
-    private static final int SURFACE = Color.rgb(28, 28, 30);
-    private static final int SURFACE_2 = Color.rgb(38, 38, 40);
+    private static final int BG = Color.rgb(11, 13, 12);
+    private static final int SURFACE = Color.rgb(23, 27, 25);
+    private static final int SURFACE_2 = Color.rgb(31, 37, 34);
+    private static final int SURFACE_3 = Color.rgb(17, 21, 19);
     private static final int TEXT = Color.WHITE;
-    private static final int MUTED = Color.rgb(155, 155, 160);
-    private static final int MINT = Color.rgb(0, 200, 150);
-    private static final int RED = Color.rgb(245, 110, 110);
-    private static final int BORDER = Color.rgb(58, 58, 60);
+    private static final int MUTED = Color.rgb(157, 169, 163);
+    private static final int MINT = Color.rgb(73, 224, 173);
+    private static final int MINT_DARK = Color.rgb(21, 74, 58);
+    private static final int RED = Color.rgb(255, 126, 126);
+    private static final int BORDER = Color.rgb(57, 68, 62);
+    private static final int CODE_BG = Color.rgb(14, 19, 17);
     private static final String GREETING = "Halo! Welcome to Dayven AI 👋✨\nAPI key kamu sudah aktif dan bisa langsung digunakan secara normal ya!\nSekarang saya siap bantu kamu. Ada bug yang mau di-fix, atau mau tambahkan fitur dan code baru ke proyek kamu? Kirim detailnya di sini, nanti saya bantu dengan teliti. 🚀";
     private static final String THINKING = "💭 Dayven AI lagi mikir dulu ya...\nsedang menganalisis kode dan menyusun solusinya... ⏳";
     private static final Pattern MUTATING = Pattern.compile("(?i)\\b(create|make|build|generate|fix|repair|change|modify|update|buat|bikin|perbaiki|ubah|layout|xml|java|kotlin|c\\+\\+|block|code|res|library|hubungkan)\\b");
@@ -79,6 +89,7 @@ public final class AgentFragmentV2 extends Fragment {
     private String projectId;
     private String selectedFile;
     private TextView liveAssistant;
+    private View thinkingLine;
     private boolean busy;
     private Runnable heartbeat;
     private FrameLayout activeSettingsPage;
@@ -123,7 +134,12 @@ public final class AgentFragmentV2 extends Fragment {
         actions.addView(settings, new LinearLayout.LayoutParams(dp(48), dp(48))); actions.addView(exit, new LinearLayout.LayoutParams(dp(48), dp(48)));
         FrameLayout.LayoutParams ap = frame(-2, dp(48), Gravity.END | Gravity.CENTER_VERTICAL); ap.rightMargin = dp(4); header.addView(actions, ap); root.addView(header, frame(-1, dp(60), Gravity.TOP));
 
-        LinearLayout status = row(c); status.setGravity(Gravity.CENTER_VERTICAL); status.setPadding(dp(4), dp(2), dp(4), dp(2)); TextView dot = label(c, "●", 14, false); dot.setGravity(Gravity.CENTER); dot.setTextColor(MINT); status.addView(dot, new LinearLayout.LayoutParams(dp(40), dp(40))); statusText = label(c, "Offline · add an API profile", 12, false); statusText.setTextColor(MUTED); status.addView(statusText, weight(1)); tokenText = label(c, "", 10, false); tokenText.setTextColor(MUTED); status.addView(tokenText, new LinearLayout.LayoutParams(-2, dp(40))); TextView auto = label(c, "AUTO", 10, true); auto.setGravity(Gravity.CENTER); auto.setTextColor(MINT); auto.setPadding(dp(12), 0, dp(12), 0); auto.setBackground(stroke(Color.TRANSPARENT, dp(18), Color.rgb(0, 130, 100))); status.addView(auto, new LinearLayout.LayoutParams(-2, dp(40))); content.addView(status, new LinearLayout.LayoutParams(-1, dp(48)));
+        LinearLayout status = row(c); status.setGravity(Gravity.CENTER_VERTICAL); status.setPadding(dp(12), 0, dp(8), 0); status.setBackground(round(SURFACE_3, dp(18)));
+        TextView dot = label(c, "●", 11, false); dot.setGravity(Gravity.CENTER); dot.setTextColor(MINT); status.addView(dot, new LinearLayout.LayoutParams(dp(24), dp(40)));
+        statusText = label(c, "Offline · sambungkan API", 12, true); statusText.setTextColor(MUTED); status.addView(statusText, weight(1));
+        tokenText = label(c, "", 10, false); tokenText.setTextColor(MUTED); status.addView(tokenText, new LinearLayout.LayoutParams(-2, dp(40)));
+        TextView auto = label(c, "AUTO", 10, true); auto.setGravity(Gravity.CENTER); auto.setTextColor(MINT); auto.setPadding(dp(12), 0, dp(12), 0); auto.setBackground(stroke(Color.TRANSPARENT, dp(14), MINT_DARK)); status.addView(auto, new LinearLayout.LayoutParams(-2, dp(34)));
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1, dp(44)); statusParams.setMargins(dp(2), dp(8), dp(2), dp(2)); content.addView(status, statusParams);
 
         transcript = new ScrollView(c); transcript.setFillViewport(true); transcript.setSmoothScrollingEnabled(true); transcript.setClipToPadding(false);
         messages = column(c); messages.setPadding(0, dp(8), 0, dp(8)); transcript.addView(messages, new ViewGroup.LayoutParams(-1, -2)); content.addView(transcript, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -148,11 +164,11 @@ public final class AgentFragmentV2 extends Fragment {
 
     private LinearLayout composerBar(Context c) {
         LinearLayout bar = row(c); bar.setGravity(Gravity.CENTER_VERTICAL); bar.setPadding(dp(4), dp(4), dp(4), dp(4)); bar.setElevation(dp(8)); bar.setBackground(stroke(SURFACE, dp(28), BORDER));
-        MaterialButton attach = icon(c, "+", "Attach"); attach.setBackground(round(SURFACE_2, dp(22))); bar.addView(attach, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        composer = new EditText(c); composer.setHint("Message..."); composer.setHintTextColor(Color.rgb(130, 130, 135)); composer.setTextColor(TEXT); composer.setTextSize(15); composer.setGravity(Gravity.CENTER_VERTICAL | Gravity.START); composer.setPadding(dp(10), 0, dp(8), 0); composer.setMinHeight(dp(48)); composer.setMaxLines(5); composer.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE); composer.setBackgroundColor(Color.TRANSPARENT);
+        MaterialButton attach = icon(c, "＋", "Lampirkan konteks"); attach.setBackground(round(SURFACE_2, dp(22))); bar.addView(attach, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        composer = new EditText(c); composer.setHint("Tulis pesan untuk Dayven AI…"); composer.setHintTextColor(Color.rgb(128, 143, 135)); composer.setTextColor(TEXT); composer.setTextSize(15); composer.setGravity(Gravity.CENTER_VERTICAL | Gravity.START); composer.setPadding(dp(10), 0, dp(8), 0); composer.setMinHeight(dp(48)); composer.setMaxLines(5); composer.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE); composer.setBackgroundColor(Color.TRANSPARENT);
         composer.setOnFocusChangeListener((v, focused) -> { if (focused) v.postDelayed(() -> { ViewCompat.requestApplyInsets(root); scrollBottom(); }, 100); }); bar.addView(composer, weight(1));
-        micButton = icon(c, "♩", "Voice input"); micButton.setBackground(round(SURFACE_2, dp(22))); bar.addView(micButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        sendButton = icon(c, "↑", "Send message"); sendButton.setTextColor(Color.BLACK); sendButton.setBackground(round(MINT, dp(24))); sendButton.setVisibility(View.GONE); bar.addView(sendButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        micButton = icon(c, "◉", "Voice input"); micButton.setBackground(round(SURFACE_2, dp(22))); bar.addView(micButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        sendButton = icon(c, "↑", "Kirim pesan"); sendButton.setTextColor(Color.rgb(5, 25, 18)); sendButton.setBackground(round(MINT, dp(24))); sendButton.setVisibility(View.GONE); bar.addView(sendButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
         sendButton.setOnClickListener(v -> { v.setScaleX(.86f); v.setScaleY(.86f); v.animate().scaleX(1f).scaleY(1f).setDuration(150).start(); send(); });
         composer.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
@@ -165,7 +181,7 @@ public final class AgentFragmentV2 extends Fragment {
     private void restoreSession() {
         messages.removeAllViews();
         if (session.messages.isEmpty()) {
-            addAssistant("Saya siap membantu. Kirim bug, ide fitur, atau potongan kode. Untuk perubahan project, saya akan tampilkan proposal dulu sebelum menerapkan apa pun.");
+            addAssistant("Saya siap membantu proyek Sketchware kamu. Kirim bug, ide fitur, atau potongan kode. Untuk perubahan project, saya akan menampilkan proposal terlebih dahulu supaya kamu bisa meninjau dan memilih Accept atau Cancel.");
         } else {
             for (AgentWorkspaceStore.Message m : session.messages) bubble(m.text, "user".equals(m.role));
         }
@@ -194,9 +210,9 @@ public final class AgentFragmentV2 extends Fragment {
 
     private void addThinking() {
         LinearLayout line = row(requireContext()); line.setGravity(Gravity.START | Gravity.CENTER_VERTICAL); line.setTag("thinking");
-        line.addView(avatar(), new LinearLayout.LayoutParams(dp(32), dp(32)));
-        TextView t = label(requireContext(), THINKING, 14, false); t.setTextColor(MUTED); t.setPadding(dp(12), dp(10), dp(12), dp(10)); t.setBackground(round(SURFACE, 18));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.setMargins(dp(8), dp(4), dp(48), dp(4)); line.addView(t, p);
+        TextView t = label(requireContext(), THINKING, 13, false); t.setTextColor(MUTED); t.setPadding(dp(14), dp(10), dp(14), dp(10)); t.setBackground(stroke(SURFACE_3, dp(16), MINT_DARK));
+        line.addView(t, new LinearLayout.LayoutParams(-2, -2));
+        thinkingLine = line;
         messages.addView(line, new LinearLayout.LayoutParams(-1, -2)); scrollBottom();
     }
 
@@ -205,6 +221,7 @@ public final class AgentFragmentV2 extends Fragment {
             View v = messages.getChildAt(i);
             if ("thinking".equals(v.getTag())) messages.removeViewAt(i);
         }
+        thinkingLine = null;
     }
 
     private String promptFor(String prompt) {
@@ -332,6 +349,7 @@ public final class AgentFragmentV2 extends Fragment {
                     tokenText.setText(usage.label().isEmpty() ? remaining : usage.label());
                     if (liveAssistant != null) {
                         String full = liveAssistant.getText().toString();
+                        liveAssistant.setText(richText(full));
                         store.append(session.id, "assistant", full);
                         session = store.getSession(session.id);
                         if (MUTATING.matcher(original).find()) showProposal(full);
@@ -366,15 +384,34 @@ public final class AgentFragmentV2 extends Fragment {
         if (parsed == null) return;
         LinearLayout line = row(requireContext()); line.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         line.addView(avatar(), new LinearLayout.LayoutParams(dp(32), dp(32)));
-        LinearLayout card = column(requireContext()); card.setPadding(dp(12), dp(10), dp(12), dp(10)); card.setBackground(round(SURFACE_2, 18));
-        card.addView(label(requireContext(), "Proposal: " + parsed.target, 13, true));
-        TextView preview = label(requireContext(), preview(parsed.content), 12, false); preview.setTextColor(MUTED); card.addView(preview);
+        LinearLayout card = column(requireContext()); card.setPadding(dp(14), dp(12), dp(14), dp(12)); card.setBackground(stroke(SURFACE_2, dp(18), BORDER));
+        TextView proposalTitle = label(requireContext(), "Review perubahan", 13, true);
+        proposalTitle.setTextColor(MINT);
+        card.addView(proposalTitle);
+        TextView target = label(requireContext(), parsed.target, 12, false);
+        target.setTextColor(TEXT);
+        target.setPadding(0, dp(4), 0, dp(8));
+        card.addView(target);
+        TextView preview = label(requireContext(), preview(parsed.content), 12, false);
+        preview.setTextColor(Color.rgb(197, 229, 211));
+        preview.setTypeface(Typeface.MONOSPACE);
+        preview.setPadding(dp(10), dp(9), dp(10), dp(9));
+        preview.setBackground(round(CODE_BG, dp(10)));
+        card.addView(preview);
+        TextView warning = label(requireContext(), "Belum diterapkan · pilih Accept untuk melanjutkan", 11, false);
+        warning.setTextColor(MUTED);
+        warning.setPadding(0, dp(8), 0, dp(4));
+        card.addView(warning);
         LinearLayout buttons = row(requireContext());
         MaterialButton cancel = smallButton("Cancel");
         MaterialButton accept = smallButton("Accept");
+        cancel.setTextColor(MUTED);
+        cancel.setBackground(stroke(SURFACE_3, dp(14), BORDER));
+        accept.setTextColor(Color.rgb(7, 30, 22));
+        accept.setBackground(round(MINT, dp(14)));
         buttons.addView(cancel, weight(1)); buttons.addView(accept, weight(1));
         card.addView(buttons);
-        line.addView(card, new LinearLayout.LayoutParams(-2, -2));
+        line.addView(card, weight(1));
         messages.addView(line, new LinearLayout.LayoutParams(-1, -2));
         cancel.setOnClickListener(v -> { messages.removeView(line); addAssistant("Dibatalkan. Tidak ada perubahan yang diterapkan."); });
         accept.setOnClickListener(v -> { messages.removeView(line); accept(parsed); });
@@ -396,37 +433,80 @@ public final class AgentFragmentV2 extends Fragment {
 
     private void showDrawer() {
         final FrameLayout layer = new FrameLayout(requireContext());
-        layer.setBackgroundColor(Color.argb(150, 0, 0, 0));
+        layer.setBackgroundColor(Color.argb(165, 0, 0, 0));
         LinearLayout panel = column(requireContext());
-        panel.setBackgroundColor(BG);
-        panel.setPadding(dp(20), dp(20), dp(12), dp(12));
-        panel.addView(label(requireContext(), "Dayven AI", 25, true));
-        panel.addView(label(requireContext(), "Chat log", 12, false));
+        panel.setBackground(stroke(BG, 0, BORDER));
+        panel.setPadding(dp(18), dp(18), dp(10), dp(12));
+        LinearLayout drawerHeader = row(requireContext());
+        drawerHeader.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout brand = column(requireContext());
+        brand.addView(label(requireContext(), "Dayven AI", 22, true));
+        TextView drawerSubtitle = label(requireContext(), "Percakapan tersimpan", 12, false);
+        drawerSubtitle.setTextColor(MUTED);
+        brand.addView(drawerSubtitle);
+        drawerHeader.addView(brand, weight(1));
+        MaterialButton close = icon(requireContext(), "×", "Tutup riwayat chat");
+        close.setBackground(round(SURFACE_2, dp(16)));
+        close.setOnClickListener(v -> {
+            ViewGroup parent = (ViewGroup) layer.getParent();
+            if (parent != null) parent.removeView(layer);
+        });
+        drawerHeader.addView(close, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        panel.addView(drawerHeader);
 
         MaterialButton fresh = smallButton("＋  Chat baru");
+        fresh.setTextColor(Color.rgb(7, 30, 22));
+        fresh.setBackground(round(MINT, dp(18)));
         fresh.setOnClickListener(v -> {
             session = store.newSession("New chat");
             sessionTitle.setText(session.title);
             restoreSession();
             ((ViewGroup) layer.getParent()).removeView(layer);
         });
-        panel.addView(fresh, new LinearLayout.LayoutParams(-1, dp(52)));
+        LinearLayout.LayoutParams freshParams = new LinearLayout.LayoutParams(-1, dp(50));
+        freshParams.setMargins(0, dp(18), dp(8), dp(16));
+        panel.addView(fresh, freshParams);
+        TextView recent = label(requireContext(), "TERBARU", 10, true);
+        recent.setTextColor(MUTED);
+        recent.setPadding(dp(4), 0, 0, dp(8));
+        panel.addView(recent);
 
         ScrollView listScroll = new ScrollView(requireContext());
         listScroll.setFillViewport(true);
         LinearLayout list = column(requireContext());
         for (AgentWorkspaceStore.Session s : store.getSessions()) {
-            TextView item = label(requireContext(), s.title, 14, false);
-            item.setTextColor(TEXT);
-            item.setPadding(dp(12), dp(14), dp(12), dp(14));
-            item.setMinHeight(dp(48));
+            LinearLayout item = row(requireContext());
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setPadding(dp(12), dp(8), dp(6), dp(8));
             item.setBackground(round(s.id.equals(session.id) ? SURFACE_2 : Color.TRANSPARENT, 14));
+            LinearLayout copy = column(requireContext());
+            TextView title = label(requireContext(), s.title, 14, s.id.equals(session.id));
+            title.setTextColor(TEXT);
+            copy.addView(title);
+            String preview = s.messages.isEmpty() ? "Percakapan baru" : s.messages.get(s.messages.size() - 1).text;
+            TextView snippet = label(requireContext(), compactPreview(preview), 11, false);
+            snippet.setTextColor(MUTED);
+            copy.addView(snippet);
+            item.addView(copy, weight(1));
+            MaterialButton delete = icon(requireContext(), "⋯", "Opsi chat");
+            delete.setTextColor(MUTED);
+            delete.setTextSize(18);
+            delete.setBackgroundColor(Color.TRANSPARENT);
+            item.addView(delete, new LinearLayout.LayoutParams(dp(38), dp(44)));
             item.setOnClickListener(v -> {
                 session = store.getSession(s.id);
                 store.selectSession(s.id);
                 sessionTitle.setText(session.title);
                 restoreSession();
                 ((ViewGroup) layer.getParent()).removeView(layer);
+            });
+            delete.setOnClickListener(v -> {
+                store.deleteSession(s.id);
+                session = store.getOrCreateCurrent();
+                sessionTitle.setText(session.title);
+                restoreSession();
+                ViewGroup parent = (ViewGroup) layer.getParent();
+                if (parent != null) parent.removeView(layer);
             });
             list.addView(item);
         }
@@ -435,10 +515,16 @@ public final class AgentFragmentV2 extends Fragment {
 
         FrameLayout.LayoutParams pp = frame(-1, -1, Gravity.START);
         pp.width = Math.round(getResources().getDisplayMetrics().widthPixels * .86f);
-        pp.topMargin = dp(96); pp.bottomMargin = dp(12);
+        pp.topMargin = dp(72); pp.bottomMargin = dp(8);
         layer.addView(panel, pp);
         layer.setOnClickListener(v -> { if (v == layer) ((ViewGroup) layer.getParent()).removeView(layer); });
         root.addView(layer, frame(-1, -1, Gravity.TOP));
+    }
+
+    private String compactPreview(String value) {
+        if (value == null) return "";
+        String clean = value.replace('\n', ' ').replaceAll("\\s+", " ").trim();
+        return clean.length() > 42 ? clean.substring(0, 42) + "…" : clean;
     }
 
     private void closeSettings() {
@@ -655,12 +741,12 @@ public final class AgentFragmentV2 extends Fragment {
         if (!user) line.addView(avatar(), new LinearLayout.LayoutParams(dp(32), dp(32)));
         LinearLayout col = column(requireContext());
         col.setGravity(user ? Gravity.END : Gravity.START);
-        TextView bubble = label(requireContext(), text, 15, false);
+         TextView bubble = label(requireContext(), user ? text : richText(text), 15, false);
         bubble.setTextColor(Color.WHITE);
         bubble.setTextIsSelectable(true);
-        bubble.setMaxWidth(Math.round(requireContext().getResources().getDisplayMetrics().widthPixels * .75f));
-        bubble.setPadding(dp(12), dp(10), dp(12), dp(10));
-        bubble.setBackground(round(user ? MINT : SURFACE, 18));
+         bubble.setMaxWidth(Math.round(requireContext().getResources().getDisplayMetrics().widthPixels * (user ? .78f : .86f)));
+         bubble.setPadding(dp(14), dp(11), dp(14), dp(11));
+         bubble.setBackground(round(user ? MINT_DARK : SURFACE, 18));
         col.addView(bubble);
         TextView time = label(requireContext(), new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 10, false);
         time.setTextColor(MUTED);
@@ -679,12 +765,12 @@ public final class AgentFragmentV2 extends Fragment {
         line.addView(avatar(), new LinearLayout.LayoutParams(dp(32), dp(32)));
         LinearLayout col = column(requireContext());
         col.setGravity(Gravity.START);
-        TextView bubble = label(requireContext(), text, 15, false);
+         TextView bubble = label(requireContext(), richText(text), 15, false);
         bubble.setTextColor(TEXT);
         bubble.setTextIsSelectable(true);
-        bubble.setMaxWidth(Math.round(requireContext().getResources().getDisplayMetrics().widthPixels * .75f));
-        bubble.setPadding(dp(12), dp(10), dp(12), dp(10));
-        bubble.setBackground(round(SURFACE, 18));
+         bubble.setMaxWidth(Math.round(requireContext().getResources().getDisplayMetrics().widthPixels * .86f));
+         bubble.setPadding(dp(14), dp(11), dp(14), dp(11));
+         bubble.setBackground(round(SURFACE, 18));
         col.addView(bubble);
         TextView time = label(requireContext(), new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 10, false);
         time.setTextColor(MUTED);
@@ -699,7 +785,7 @@ public final class AgentFragmentV2 extends Fragment {
     }
 
     private TextView avatar() {
-        TextView a = label(requireContext(), "+", 17, true);
+        TextView a = label(requireContext(), "✦", 16, true);
         a.setGravity(Gravity.CENTER);
         a.setTextColor(MINT);
         a.setBackground(stroke(SURFACE_2, dp(18), Color.rgb(0, 130, 100)));
@@ -708,6 +794,40 @@ public final class AgentFragmentV2 extends Fragment {
     }
 
     private void addAssistant(String text) { bubble(text, false); }
+
+    /**
+     * Keeps markdown readable without pulling a full markdown dependency into the editor.
+     * Fenced code is deliberately rendered as a quiet monospace block so long answers do not
+     * become a wall of punctuation in the chat transcript.
+     */
+    private CharSequence richText(String value) {
+        if (value == null || value.isEmpty()) return "";
+        SpannableStringBuilder out = new SpannableStringBuilder();
+        String[] lines = value.replace("\r", "").split("\n", -1);
+        boolean code = false;
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            String trimmed = line.trim();
+            if (trimmed.startsWith("```")) {
+                code = !code;
+                if (code && out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append('\n');
+                continue;
+            }
+            int start = out.length();
+            out.append(line);
+            int end = out.length();
+            if (code) {
+                out.setSpan(new TypefaceSpan("monospace"), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                out.setSpan(new BackgroundColorSpan(CODE_BG), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                out.setSpan(new ForegroundColorSpan(Color.rgb(190, 239, 215)), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else if (trimmed.startsWith("#") || trimmed.startsWith("TARGET:") || trimmed.startsWith("FILE:")) {
+                out.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                out.setSpan(new ForegroundColorSpan(MINT), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (i < lines.length - 1) out.append('\n');
+        }
+        return out;
+    }
 
     private void scrollBottom() {
         if (transcript != null) {
@@ -737,7 +857,7 @@ public final class AgentFragmentV2 extends Fragment {
     private LinearLayout row(Context c) { LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
     private LinearLayout.LayoutParams weight(float w) { return new LinearLayout.LayoutParams(0, -2, w); }
     private FrameLayout.LayoutParams frame(int width, int height, int gravity) { return new FrameLayout.LayoutParams(width, height, gravity); }
-    private TextView label(Context c, String text, int size, boolean bold) { TextView v = new TextView(c); v.setText(text); v.setTextSize(size); v.setTextColor(TEXT); v.setTypeface(null, bold ? Typeface.BOLD : Typeface.NORMAL); return v; }
+    private TextView label(Context c, CharSequence text, int size, boolean bold) { TextView v = new TextView(c); v.setText(text); v.setTextSize(size); v.setTextColor(TEXT); v.setTypeface(null, bold ? Typeface.BOLD : Typeface.NORMAL); return v; }
     private MaterialButton icon(Context c, String text, String description) { MaterialButton b = new MaterialButton(c); b.setText(text); b.setContentDescription(description); b.setTextSize(18); b.setTextColor(TEXT); b.setMinHeight(dp(48)); b.setMinWidth(dp(48)); b.setPadding(0, 0, 0, 0); b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)); return b; }
     private MaterialButton smallButton(String text) { MaterialButton b = new MaterialButton(requireContext()); b.setText(text); b.setTextSize(12); b.setTextColor(TEXT); b.setMinHeight(dp(44)); b.setMinWidth(dp(44)); b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(SURFACE_2)); return b; }
     private GradientDrawable round(int color, int radius) { GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
