@@ -7,6 +7,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 
@@ -104,16 +105,43 @@ public final class AgentWorkspaceStore {
     public synchronized Session getOrCreateCurrent() {
         String id = prefs.getString(CURRENT, "");
         List<Session> sessions = getSessions();
+        cleanEmptySessions(sessions, id);
         for (Session s : sessions) if (s.id.equals(id)) return s;
-        if (!sessions.isEmpty()) return sessions.get(0);
+        if (!sessions.isEmpty()) {
+            Session first = sessions.get(0);
+            prefs.edit().putString(CURRENT, first.id).apply();
+            return first;
+        }
         return newSession("New chat");
     }
 
+    private void cleanEmptySessions(List<Session> sessions, String currentId) {
+        boolean changed = false;
+        Iterator<Session> it = sessions.iterator();
+        while (it.hasNext()) {
+            Session s = it.next();
+            if (s.messages.isEmpty() && !s.id.equals(currentId)) {
+                it.remove();
+                changed = true;
+            }
+        }
+        if (changed) saveSessions(sessions);
+    }
+
     public synchronized Session newSession(String title) {
+        List<Session> sessions = getSessions();
+        for (Session s : sessions) {
+            if (s.messages.isEmpty()) {
+                s.title = title;
+                s.updated = System.currentTimeMillis();
+                saveSessions(sessions);
+                prefs.edit().putString(CURRENT, s.id).apply();
+                return s;
+            }
+        }
         Session s = new Session();
         s.title = title;
         s.created = s.updated = System.currentTimeMillis();
-        List<Session> sessions = getSessions();
         sessions.add(0, s);
         saveSessions(sessions);
         prefs.edit().putString(CURRENT, s.id).apply();
@@ -133,7 +161,9 @@ public final class AgentWorkspaceStore {
         for (Session s : sessions) if (s.id.equals(sessionId)) {
             s.messages.add(new Message(role, text, System.currentTimeMillis()));
             s.updated = System.currentTimeMillis();
-            if (s.title.equals("New chat") && "user".equals(role)) s.title = text.length() > 30 ? text.substring(0, 30) + "..." : text;
+            if (("New chat".equalsIgnoreCase(s.title)) && "user".equals(role)) {
+                s.title = text.length() > 30 ? text.substring(0, 30) + "..." : text;
+            }
             break;
         }
         saveSessions(sessions);
