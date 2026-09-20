@@ -27,7 +27,9 @@ import java.util.WeakHashMap;
 
 import pro.sketchware.R;
 
-/** Installs the Agent page with no edge-to-edge padding tricks in the host. */
+/**
+ * Installs Dayven AI Agent with fullscreen immersive support (under system status bar/control center).
+ */
 public final class AgentTabEnhancer implements Application.ActivityLifecycleCallbacks {
     private static final String FRAGMENT_TAG = "daygreen_gemini_agent_tab";
     private static final Map<Activity, AgentTabEnhancer> INSTANCES = new WeakHashMap<>();
@@ -44,13 +46,29 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         if (hook != null) hook.restore(activity);
     }
 
+    public static void setExpanded(Activity activity, boolean expanded) {
+        if (activity == null) return;
+        View appBar = activity.findViewById(R.id.tab_layout);
+        View bottomBar = activity.findViewById(R.id.bottom_bar);
+        View parentAppBar = appBar != null && appBar.getParent() instanceof View ? (View) appBar.getParent() : null;
+        View parentBottomBar = bottomBar != null && bottomBar.getParent() instanceof View ? (View) bottomBar.getParent() : null;
+
+        if (parentAppBar != null) {
+            parentAppBar.setVisibility(expanded ? View.GONE : View.VISIBLE);
+        }
+        if (parentBottomBar != null) {
+            parentBottomBar.setVisibility(expanded ? View.GONE : View.VISIBLE);
+        }
+    }
+
     private void attach(FragmentActivity activity) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
         activity.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         TabLayout tabs = activity.findViewById(R.id.tab_layout);
         ViewPager pager = activity.findViewById(R.id.viewpager);
-        ViewGroup host = activity.findViewById(R.id.layout_coordinator);
-        if (tabs == null || pager == null || host == null || attachedContainers.containsKey(activity)) return;
+        ViewGroup rootContainer = activity.findViewById(R.id.container);
+        if (rootContainer == null) rootContainer = activity.findViewById(R.id.layout_coordinator);
+        if (tabs == null || pager == null || rootContainer == null || attachedContainers.containsKey(activity)) return;
 
         FrameLayout agentContainer = new FrameLayout(activity);
         agentContainer.setId(View.generateViewId());
@@ -58,7 +76,7 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         agentContainer.setClipChildren(true);
         agentContainer.setClipToPadding(true);
         agentContainer.setFitsSystemWindows(false);
-        host.addView(agentContainer, new ViewGroup.LayoutParams(-1, -1));
+        rootContainer.addView(agentContainer, new ViewGroup.LayoutParams(-1, -1));
         attachedContainers.put(activity, agentContainer.getId());
 
         String projectId = activity.getIntent().getStringExtra("sc_id");
@@ -68,31 +86,6 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
         Fragment old = manager.findFragmentByTag(FRAGMENT_TAG);
         if (old != null) manager.beginTransaction().remove(old).commitNowAllowingStateLoss();
         manager.beginTransaction().replace(agentContainer.getId(), AgentFragmentV2.newInstance(projectId, selectedFile), FRAGMENT_TAG).commitNowAllowingStateLoss();
-
-        MaterialButton undo = new MaterialButton(activity);
-        undo.setText("↶");
-        undo.setTextSize(18);
-        undo.setTextColor(0xFFE4EDE7);
-        undo.setContentDescription("Undo last Agent change");
-        undo.setMinWidth(dp(activity, 48));
-        undo.setMinHeight(dp(activity, 48));
-        undo.setPadding(0, 0, 0, 0);
-        undo.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xCC1D2723));
-        FrameLayout.LayoutParams undoParams = new FrameLayout.LayoutParams(dp(activity, 48), dp(activity, 48), Gravity.TOP | Gravity.END);
-        undoParams.setMargins(0, dp(activity, 8), dp(activity, 8), 0);
-        agentContainer.addView(undo, undoParams);
-        ViewCompat.setOnApplyWindowInsetsListener(agentContainer, (v, insets) -> {
-            ViewGroup.LayoutParams raw = undo.getLayoutParams();
-            if (raw instanceof FrameLayout.LayoutParams) {
-                FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) raw;
-                p.topMargin = dp(activity, 8);
-                p.rightMargin = dp(activity, 8);
-                undo.setLayoutParams(p);
-            }
-            return insets;
-        });
-        ViewCompat.requestApplyInsets(agentContainer);
-        undo.setVisibility(View.GONE);
 
         int currentPage = pager.getCurrentItem();
         CharSequence[] titles = new CharSequence[Math.min(3, tabs.getTabCount())];
@@ -112,19 +105,23 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
                 if (tab == agentTab) {
                     pager.setVisibility(View.GONE);
                     agentContainer.setVisibility(View.VISIBLE);
-                    undo.setVisibility(View.VISIBLE);
+                    setExpanded(activity, true);
                 } else {
                     agentContainer.setVisibility(View.GONE);
                     pager.setVisibility(View.VISIBLE);
-                    undo.setVisibility(View.GONE);
+                    setExpanded(activity, false);
                     pager.setCurrentItem(Math.min(tab.getPosition(), Math.max(0, pager.getAdapter() == null ? 0 : pager.getAdapter().getCount() - 1)), false);
                 }
             }
-            @Override public void onTabUnselected(TabLayout.Tab tab) { if (tab == agentTab) { agentContainer.setVisibility(View.GONE); undo.setVisibility(View.GONE); } }
+            @Override public void onTabUnselected(TabLayout.Tab tab) { 
+                if (tab == agentTab) { 
+                    agentContainer.setVisibility(View.GONE); 
+                    setExpanded(activity, false);
+                } 
+            }
             @Override public void onTabReselected(TabLayout.Tab tab) { }
         });
-        String undoProjectId = projectId;
-        undo.setOnClickListener(v -> Toast.makeText(activity, AgentActionExecutor.revertLast(activity, undoProjectId), Toast.LENGTH_SHORT).show());
+
         pager.addOnPageChangeListener(new ViewPager.SimpleOnPageChangeListener() {
             @Override public void onPageSelected(int position) {
                 if (position < 0 || position >= tabs.getTabCount() - 1) return;
@@ -133,7 +130,7 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
                 if (tab != null) tab.select();
                 syncing[0] = false;
                 agentContainer.setVisibility(View.GONE);
-                undo.setVisibility(View.GONE);
+                setExpanded(activity, false);
                 pager.setVisibility(View.VISIBLE);
             }
         });
@@ -142,6 +139,7 @@ public final class AgentTabEnhancer implements Application.ActivityLifecycleCall
     }
 
     private void restore(Activity activity) {
+        setExpanded(activity, false);
         TabLayout tabs = activity.findViewById(R.id.tab_layout);
         ViewPager pager = activity.findViewById(R.id.viewpager);
         if (tabs != null && tabs.getTabCount() > 1) {
