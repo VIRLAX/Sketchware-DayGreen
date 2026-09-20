@@ -36,6 +36,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -837,6 +838,7 @@ public final class AgentFragmentV2 extends Fragment {
             page.animate().alpha(0f).setDuration(160).withEndAction(() -> {
                 root.removeView(page);
                 activeSettingsPage = null;
+                restoreSession();
             }).start();
         });
         LinearLayout.LayoutParams doneLp = new LinearLayout.LayoutParams(-1, -2);
@@ -885,7 +887,7 @@ public final class AgentFragmentV2 extends Fragment {
             headRow.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
             card.addView(headRow);
 
-            EditText key = new EditText(requireContext());
+            final EditText key = new EditText(requireContext());
             key.setText(p.key);
             key.setHint("Tempel API Key Gemini di sini");
             key.setHintTextColor(TEXT_SECONDARY);
@@ -899,11 +901,20 @@ public final class AgentFragmentV2 extends Fragment {
             keyLp.topMargin = dp(10);
             card.addView(key, keyLp);
 
+            key.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                    p.key = s == null ? "" : s.toString().trim();
+                    store.saveProfiles(profiles);
+                }
+                @Override public void afterTextChanged(Editable s) { }
+            });
+
             boolean ok = p.lastError.isEmpty() && !p.models.isEmpty();
             String statusLine = p.lastError.isEmpty()
                     ? (p.models.isEmpty() ? "Belum divalidasi" : "Aktif \u00B7 " + p.models.size() + " model siap" + (p.rate.isEmpty() ? "" : " \u00B7 " + p.rate))
                     : p.lastError;
-            TextView status = label(requireContext(), statusLine, 11, false);
+            final TextView status = label(requireContext(), statusLine, 11, false);
             status.setTextColor(p.lastError.isEmpty() ? (ok ? IOS_GREEN : TEXT_SECONDARY) : IOS_RED);
             status.setPadding(0, dp(7), 0, dp(10));
             card.addView(status);
@@ -919,10 +930,18 @@ public final class AgentFragmentV2 extends Fragment {
 
             validate.setOnClickListener(v -> {
                 bounce(v);
-                p.key = key.getText().toString().trim();
-                status.setText("Memeriksa API Key...");
+                String currentKey = key.getText().toString().trim();
+                p.key = currentKey;
+                store.saveProfiles(profiles);
+                if (currentKey.isEmpty()) {
+                    Toast.makeText(requireContext(), "Masukkan API Key terlebih dahulu", Toast.LENGTH_SHORT).show();
+                    status.setText("API Key kosong");
+                    status.setTextColor(IOS_RED);
+                    return;
+                }
+                status.setText("Memeriksa API Key ke Google AI Studio...");
                 status.setTextColor(TEXT_SECONDARY);
-                validateAPI(p);
+                validateAPI(p, status, key);
             });
             delete.setOnClickListener(v -> {
                 store.removeProfile(p.id);
@@ -936,7 +955,7 @@ public final class AgentFragmentV2 extends Fragment {
         }
     }
 
-    private void validateAPI(AgentWorkspaceStore.Profile p) {
+    private void validateAPI(AgentWorkspaceStore.Profile p, final TextView statusView, final EditText keyInput) {
         client.listModels(p.key, new GeminiAutoClient.Listener() {
             @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) {
                 p.models.clear();
@@ -946,9 +965,16 @@ public final class AgentFragmentV2 extends Fragment {
                 p.rate = remaining;
                 store.saveProfiles(profiles);
                 main.post(() -> {
-                    refreshSettings();
-                    if (session.messages.isEmpty()) restoreSession();
-                    else addAssistant("API Key " + p.name + " aktif dan siap digunakan. \u2705");
+                    if (keyInput != null && !p.key.isEmpty()) {
+                        keyInput.setText(p.key);
+                    }
+                    if (statusView != null) {
+                        statusView.setText("Aktif \u00B7 " + p.models.size() + " model siap");
+                        statusView.setTextColor(IOS_GREEN);
+                    }
+                    Toast.makeText(requireContext(), "API Key valid dan bisa digunakan! \u2705", Toast.LENGTH_SHORT).show();
+                    startHeartbeat();
+                    restoreSession();
                 });
             }
             @Override public void onDelta(String text) { }
@@ -958,8 +984,14 @@ public final class AgentFragmentV2 extends Fragment {
                 p.enabled = false;
                 store.saveProfiles(profiles);
                 main.post(() -> {
-                    refreshSettings();
-                    addAssistant("Gagal memvalidasi " + p.name + ": " + message);
+                    if (keyInput != null && !p.key.isEmpty()) {
+                        keyInput.setText(p.key);
+                    }
+                    if (statusView != null) {
+                        statusView.setText("Error: " + message);
+                        statusView.setTextColor(IOS_RED);
+                    }
+                    Toast.makeText(requireContext(), "Gagal validasi: " + message, Toast.LENGTH_LONG).show();
                 });
             }
         });
@@ -969,7 +1001,7 @@ public final class AgentFragmentV2 extends Fragment {
         stopHeartbeat();
         heartbeat = () -> {
             profiles = store.getProfiles();
-            boolean active = profiles.stream().anyMatch(p -> p.enabled && !p.key.isEmpty());
+            boolean active = profiles.stream().anyMatch(p -> p.enabled && !p.key.isEmpty() && !p.models.isEmpty());
             if (statusText != null) {
                 statusText.setText(active ? "Connected \u00B7 Gemini" : "Disconnected");
                 statusText.setTextColor(active ? IOS_GREEN : IOS_RED);
