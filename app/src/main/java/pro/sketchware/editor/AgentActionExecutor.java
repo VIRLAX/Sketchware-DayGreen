@@ -42,22 +42,40 @@ public final class AgentActionExecutor {
         if (action == null) return "The response did not contain a safe TARGET and fenced code block.";
         if (action.isXml()) return "XML_HANDOFF";
         if (action.isBlocks()) return AgentBlockExecutor.apply(scId, action.target, action.content);
-        String target = action.target;
-        if (target.startsWith("/") || target.contains("..") || target.contains(":") || target.contains("\\")) return "Rejected unsafe target path: " + target;
-        String lower = target.toLowerCase(Locale.US);
+        
+        String pathInsideRoot = action.target;
+        if (pathInsideRoot.startsWith("/") || pathInsideRoot.contains("..") || pathInsideRoot.contains(":") || pathInsideRoot.contains("\\")) return "Rejected unsafe target path: " + pathInsideRoot;
+        
+        String lower = pathInsideRoot.toLowerCase(Locale.US);
         File root;
-        if (lower.endsWith(".java") || lower.endsWith(".kt") || lower.endsWith(".kts") || lower.endsWith(".gradle")) root = new File(new FilePathUtil().getPathJava(scId));
-        else if (lower.endsWith(".cpp") || lower.endsWith(".c") || lower.endsWith(".h") || lower.endsWith(".hpp")) root = new File(new FilePathUtil().getPathNativelibs(scId));
-        else return "Rejected unsupported target type: " + target;
-        File file = new File(root, target);
+        FilePathUtil util = new FilePathUtil();
+        
+        if (lower.startsWith("res/")) {
+            root = new File(util.getPathResource(scId));
+            pathInsideRoot = pathInsideRoot.substring(4);
+        } else if (lower.startsWith("assets/")) {
+            root = new File(util.getPathAssets(scId));
+            pathInsideRoot = pathInsideRoot.substring(7);
+        } else if (lower.endsWith(".java") || lower.endsWith(".kt") || lower.endsWith(".kts") || lower.endsWith(".gradle")) {
+            root = new File(util.getPathJava(scId));
+        } else if (lower.endsWith(".cpp") || lower.endsWith(".c") || lower.endsWith(".h") || lower.endsWith(".hpp")) {
+            root = new File(util.getPathNativelibs(scId));
+        } else {
+            root = new File(util.getPathJava(scId));
+        }
+        
+        File file = new File(root, pathInsideRoot);
         try {
             String rootPath = root.getCanonicalPath(), filePath = file.getCanonicalPath();
             if (!filePath.equals(rootPath) && !filePath.startsWith(rootPath + File.separator)) return "Rejected target outside project source root.";
+            
             boolean existed = file.isFile();
             String previous = existed ? new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8) : "";
             AgentUndoJournal.saveFile(scId, filePath, existed, previous);
+            
             File parent = file.getParentFile();
             if (parent != null && !parent.exists() && !parent.mkdirs()) return "Could not create target directory.";
+            
             Files.write(file.toPath(), action.content.getBytes(StandardCharsets.UTF_8));
             return "APPLIED:" + filePath;
         } catch (Exception e) {

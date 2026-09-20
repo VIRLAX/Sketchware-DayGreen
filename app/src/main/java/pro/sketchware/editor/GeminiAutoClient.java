@@ -6,6 +6,7 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -23,7 +24,7 @@ import okio.BufferedSource;
 public final class GeminiAutoClient {
     private static final String ROOT = "https://generativelanguage.googleapis.com/v1beta/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-    private final OkHttpClient http = new OkHttpClient.Builder().callTimeout(java.time.Duration.ofSeconds(90)).build();
+    private final OkHttpClient http = new OkHttpClient.Builder().callTimeout(Duration.ofSeconds(90)).build();
 
     public interface Listener {
         void onModels(List<ModelInfo> models, String remaining, String retryAfter);
@@ -69,7 +70,7 @@ public final class GeminiAutoClient {
         }
 
         public String label() {
-            return total <= 0 ? "" : total + " tokens";
+            return total <= 0 ? "0 tokens" : total + " tokens";
         }
     }
 
@@ -81,7 +82,7 @@ public final class GeminiAutoClient {
             }
 
             @Override public void onResponse(Call call, Response response) {
-                String remaining = response.header("x-ratelimit-remaining", "");
+                String remaining = extractRate(response);
                 String retry = response.header("retry-after", "");
                 try (Response ignored = response) {
                     String body = ignored.body() == null ? "" : ignored.body().string();
@@ -117,6 +118,7 @@ public final class GeminiAutoClient {
 
     public void stream(String apiKey, String model, String prompt, Listener listener) {
         JSONObject payload = new JSONObject();
+        // Dynamic output token optimization
         int outputTokens = prompt != null && prompt.length() > 6000 ? 4096 : 2048;
         try {
             payload.put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray().put(new JSONObject().put("text", prompt)))));
@@ -137,7 +139,7 @@ public final class GeminiAutoClient {
             }
 
             @Override public void onResponse(Call call, Response response) {
-                String remaining = response.header("x-ratelimit-remaining", "");
+                String remaining = extractRate(response);
                 String retry = response.header("retry-after", "");
                 if (!response.isSuccessful()) {
                     try (Response ignored = response) {
@@ -183,6 +185,12 @@ public final class GeminiAutoClient {
         });
     }
 
+    private static String extractRate(Response response) {
+        String r = response.header("x-ratelimit-remaining", "");
+        if (r == null || r.isEmpty()) r = response.header("x-ratelimit-remaining-requests", "");
+        return (r == null || r.isEmpty()) ? "" : r + " left";
+    }
+
     private static String modelPath(String model) {
         return model.startsWith("models/") ? model : "models/" + model;
     }
@@ -198,7 +206,7 @@ public final class GeminiAutoClient {
     private static String error(String body, int status) {
         try {
             JSONObject e = new JSONObject(body).optJSONObject("error");
-            if (e != null && !e.optString("message").isEmpty()) return "HTTP " + status + ": " + e.optString("message");
+            if (e != null && !e.optString("message").isEmpty()) return e.optString("message");
         } catch (Exception ignored) { }
         return "Gemini request failed (HTTP " + status + ").";
     }

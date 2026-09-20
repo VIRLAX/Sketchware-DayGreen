@@ -14,16 +14,14 @@ import java.util.UUID;
  * Stored cleanly in SharedPreferences with fallback so keys persist permanently across app restarts.
  */
 public final class AgentWorkspaceStore {
-    private static final String PREFS = "daygreen_agent_workspace_v2";
+    private static final String PREFS = "daygreen_agent_workspace_v3";
     private static final String PROFILES = "profiles_json";
     private static final String SESSIONS = "sessions_json";
     private static final String CURRENT = "current_session";
     private final SharedPreferences prefs;
-    private final AgentSettingsStore legacy;
 
     public AgentWorkspaceStore(Context context) {
         prefs = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        legacy = new AgentSettingsStore(context);
     }
 
     public static final class Profile {
@@ -36,6 +34,10 @@ public final class AgentWorkspaceStore {
         public int failures;
         public String lastError = "";
         public String rate = "";
+
+        public boolean isValid() {
+            return key != null && !key.trim().isEmpty() && !models.isEmpty();
+        }
     }
 
     public static final class Message {
@@ -62,15 +64,6 @@ public final class AgentWorkspaceStore {
                 for (int i = 0; i < arr.length(); i++) list.add(profileFrom(arr.getJSONObject(i)));
             }
         } catch (Exception ignored) { }
-        if (list.isEmpty()) {
-            String old = legacy.getApiKey();
-            Profile p = new Profile();
-            p.name = "Gemini 1";
-            p.key = old == null ? "" : old.trim();
-            p.enabled = !p.key.isEmpty();
-            list.add(p);
-            saveProfiles(list);
-        }
         return list;
     }
 
@@ -83,9 +76,7 @@ public final class AgentWorkspaceStore {
     public synchronized Profile addProfile(String name) {
         List<Profile> list = getProfiles();
         Profile p = new Profile();
-        int idx = list.size() + 1;
-        p.name = name == null || name.trim().isEmpty() ? "Gemini " + idx : name.trim();
-        p.enabled = true;
+        p.name = name;
         list.add(p);
         saveProfiles(list);
         return p;
@@ -94,17 +85,7 @@ public final class AgentWorkspaceStore {
     public synchronized void removeProfile(String id) {
         List<Profile> list = getProfiles();
         list.removeIf(p -> p.id.equals(id));
-        if (list.isEmpty()) {
-            Profile p = new Profile();
-            p.name = "Gemini 1";
-            list.add(p);
-        }
         saveProfiles(list);
-    }
-
-    public synchronized Profile findProfile(String id) {
-        for (Profile p : getProfiles()) if (p.id.equals(id)) return p;
-        return null;
     }
 
     public synchronized List<Session> getSessions() {
@@ -117,7 +98,6 @@ public final class AgentWorkspaceStore {
             }
         } catch (Exception ignored) { }
         list.sort((a, b) -> Long.compare(b.updated, a.updated));
-        normalizeEmptySessions(list);
         return list;
     }
 
@@ -125,30 +105,16 @@ public final class AgentWorkspaceStore {
         String id = prefs.getString(CURRENT, "");
         List<Session> sessions = getSessions();
         for (Session s : sessions) if (s.id.equals(id)) return s;
-        if (!sessions.isEmpty() && isBlank(sessions.get(0))) {
-            prefs.edit().putString(CURRENT, sessions.get(0).id).apply();
-            return sessions.get(0);
-        }
-        Session created = newSession("New chat");
-        prefs.edit().putString(CURRENT, created.id).apply();
-        return created;
+        if (!sessions.isEmpty()) return sessions.get(0);
+        return newSession("New chat");
     }
 
     public synchronized Session newSession(String title) {
-        String requested = title == null || title.trim().isEmpty() ? "New chat" : title.trim();
-        List<Session> sessions = getSessions();
-        String currentId = prefs.getString(CURRENT, "");
-        if ("New chat".equals(requested)) {
-            for (Session s : sessions) if (s.id.equals(currentId) && isBlank(s)) return s;
-            for (Session s : sessions) if (isBlank(s)) {
-                prefs.edit().putString(CURRENT, s.id).apply();
-                return s;
-            }
-        }
         Session s = new Session();
-        s.title = requested;
+        s.title = title;
         s.created = s.updated = System.currentTimeMillis();
-        sessions.add(s);
+        List<Session> sessions = getSessions();
+        sessions.add(0, s);
         saveSessions(sessions);
         prefs.edit().putString(CURRENT, s.id).apply();
         return s;
@@ -165,9 +131,9 @@ public final class AgentWorkspaceStore {
     public synchronized void append(String sessionId, String role, String text) {
         List<Session> sessions = getSessions();
         for (Session s : sessions) if (s.id.equals(sessionId)) {
-            s.messages.add(new Message(role, text == null ? "" : text, System.currentTimeMillis()));
-            if ("user".equals(role) && (s.title.equals("New chat") || s.title.isEmpty())) s.title = titleFor(text);
+            s.messages.add(new Message(role, text, System.currentTimeMillis()));
             s.updated = System.currentTimeMillis();
+            if (s.title.equals("New chat") && "user".equals(role)) s.title = text.length() > 30 ? text.substring(0, 30) + "..." : text;
             break;
         }
         saveSessions(sessions);
@@ -177,42 +143,12 @@ public final class AgentWorkspaceStore {
         List<Session> sessions = getSessions();
         sessions.removeIf(s -> s.id.equals(id));
         saveSessions(sessions);
-        if (id.equals(currentSessionId())) {
-            if (sessions.isEmpty()) newSession("New chat");
-            else selectSession(sessions.get(0).id);
-        }
     }
-
-    private void normalizeEmptySessions(List<Session> sessions) {
-        Session keep = null;
-        boolean changed = false;
-        for (int i = sessions.size() - 1; i >= 0; i--) {
-            Session s = sessions.get(i);
-            if (!isBlank(s)) continue;
-            if (keep == null) keep = s;
-            else { sessions.remove(i); changed = true; }
-        }
-        if (keep != null && changed) {
-            String current = prefs.getString(CURRENT, "");
-            boolean currentRemoved = true;
-            for (Session s : sessions) if (s.id.equals(current)) { currentRemoved = false; break; }
-            if (currentRemoved) prefs.edit().putString(CURRENT, keep.id).apply();
-            saveSessions(sessions);
-        }
-    }
-
-    private static boolean isBlank(Session s) { return s != null && s.messages.isEmpty() && (s.title == null || s.title.trim().isEmpty() || "New chat".equals(s.title)); }
 
     private void saveSessions(List<Session> sessions) {
         JSONArray arr = new JSONArray();
         try { for (Session s : sessions) arr.put(sessionTo(s)); } catch (Exception ignored) { }
         prefs.edit().putString(SESSIONS, arr.toString()).apply();
-    }
-
-    private static String titleFor(String text) {
-        String value = text == null ? "New chat" : text.trim().replaceAll("\\s+", " ");
-        if (value.isEmpty()) return "New chat";
-        return value.length() > 36 ? value.substring(0, 36).trim() + "…" : value;
     }
 
     private static JSONObject profileTo(Profile p) throws Exception {

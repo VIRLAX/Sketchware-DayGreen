@@ -13,6 +13,7 @@ import android.text.InputType;
 import android.text.TextWatcher;
 import android.text.method.PasswordTransformationMethod;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -21,6 +22,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.content.res.ColorStateList;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -50,32 +52,41 @@ import java.util.regex.Pattern;
 
 import pro.sketchware.activities.editor.view.ViewCodeEditorActivity;
 
-/** Dayven AI chat, multi-API Gemini setup, sessions, model routing, and guarded proposals. */
+/** 
+ * Dayven AI Agent - A premium, intelligent coding assistant for Sketchware-DayDream.
+ * Features: Multi-API management, smart model routing (Lite/Medium/Pro), 
+ * session memory, and guided code proposals.
+ */
 public final class AgentFragmentV2 extends Fragment {
-    private static final int BG = Color.rgb(11, 13, 12);
-    private static final int SURFACE = Color.rgb(23, 27, 25);
-    private static final int SURFACE_2 = Color.rgb(31, 37, 34);
-    private static final int SURFACE_3 = Color.rgb(17, 21, 19);
-    private static final int TEXT = Color.WHITE;
-    private static final int MUTED = Color.rgb(157, 169, 163);
-    private static final int MINT = Color.rgb(73, 224, 173);
-    private static final int MINT_DARK = Color.rgb(21, 74, 58);
-    private static final int RED = Color.rgb(255, 126, 126);
-    private static final int BORDER = Color.rgb(57, 68, 62);
-    private static final int CODE_BG = Color.rgb(14, 19, 17);
-    private static final String GREETING = "Halo! Welcome to Dayven AI 👋✨\nAPI key kamu sudah aktif dan bisa langsung digunakan secara normal ya!\nSekarang saya siap bantu kamu. Ada bug yang mau di-fix, atau mau tambahkan fitur dan code baru ke proyek kamu? Kirim detailnya di sini, nanti saya bantu dengan teliti. 🚀";
+    // Premium Color Palette (Claude-inspired)
+    private static final int BG = Color.rgb(249, 248, 246); // Off-white/Cream
+    private static final int SURFACE = Color.WHITE;
+    private static final int TEXT_PRIMARY = Color.rgb(27, 27, 27);
+    private static final int TEXT_SECONDARY = Color.rgb(107, 107, 107);
+    private static final int ACCENT = Color.rgb(217, 119, 87); // Claude Orange-ish
+    private static final int ACCENT_LIGHT = Color.rgb(252, 240, 235);
+    private static final int BORDER = Color.rgb(230, 228, 220);
+    private static final int USER_BUBBLE = Color.rgb(240, 238, 233);
+    private static final int AI_BUBBLE = Color.WHITE;
+    private static final int CODE_BG = Color.rgb(30, 30, 30);
+    private static final int SUCCESS = Color.rgb(34, 197, 94);
+    private static final int ERROR = Color.rgb(239, 68, 68);
+
+    private static final String GREETING = "Halo! Welcome to Dayven AI 👋✨\nAPI key kamu sudah aktif dan bisa langsung digunakan secara normal ya!\n\nSekarang saya sudah siap bantu kamu. Ada bug yang mau di-fix, atau mau tambahkan fitur dan code baru ke proyek kamu? Kirim saja detail atau potongan kodenya di sini, nanti saya bantu selesaikan! 🚀";
     private static final String THINKING = "💭 Dayven AI lagi mikir dulu ya...\nsedang menganalisis kode dan menyusun solusinya... ⏳";
-    private static final Pattern MUTATING = Pattern.compile("(?i)\\b(create|make|build|generate|fix|repair|change|modify|update|buat|bikin|perbaiki|ubah|layout|xml|java|kotlin|c\\+\\+|block|code|res|library|hubungkan)\\b");
+    
+    private static final Pattern MUTATING = Pattern.compile("(?i)\\b(create|make|build|generate|fix|repair|change|modify|update|buat|bikin|perbaiki|ubah|layout|xml|java|kotlin|c\\+\\+|block|code|res|library|hubungkan|download)\\b");
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final GeminiAutoClient client = new GeminiAutoClient();
     private final Set<String> triedRoutes = new HashSet<>();
+    
     private AgentWorkspaceStore store;
     private AgentWorkspaceStore.Session session;
     private List<AgentWorkspaceStore.Profile> profiles = new ArrayList<>();
+    
     private FrameLayout root;
     private FrameLayout header;
-    private LinearLayout content;
     private LinearLayout messages;
     private ScrollView transcript;
     private LinearLayout composerRow;
@@ -85,11 +96,10 @@ public final class AgentFragmentV2 extends Fragment {
     private TextView sessionTitle;
     private EditText composer;
     private MaterialButton sendButton;
-    private MaterialButton micButton;
+    
     private String projectId;
     private String selectedFile;
     private TextView liveAssistant;
-    private View thinkingLine;
     private boolean busy;
     private Runnable heartbeat;
     private FrameLayout activeSettingsPage;
@@ -103,7 +113,7 @@ public final class AgentFragmentV2 extends Fragment {
         return f;
     }
 
-    @Nullable @Override public View onCreateView(@NonNull android.view.LayoutInflater inflater, @Nullable ViewGroup parent, @Nullable Bundle state) {
+    @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup parent, @Nullable Bundle state) {
         projectId = getArguments() == null ? "" : getArguments().getString("project_id", "");
         selectedFile = getArguments() == null ? "" : getArguments().getString("selected_file", "");
         store = new AgentWorkspaceStore(requireContext());
@@ -115,162 +125,219 @@ public final class AgentFragmentV2 extends Fragment {
 
     @Override public void onResume() { super.onResume(); startHeartbeat(); }
     @Override public void onPause() { stopHeartbeat(); super.onPause(); }
-    @Override public void onDestroyView() { stopHeartbeat(); super.onDestroyView(); }
 
     private View build(Context c) {
-        root = new FrameLayout(c); root.setBackgroundColor(BG); root.setClipChildren(true); root.setClipToPadding(true);
-        content = column(c); content.setPadding(dp(14), 0, dp(14), 0); root.addView(content, frame(-1, -1, Gravity.TOP));
-        header = new FrameLayout(c); header.setBackground(stroke(SURFACE, dp(22), BORDER)); header.setElevation(dp(4));
-        MaterialButton menu = icon(c, "☰", "Chat history and new chat"); menu.setBackground(stroke(SURFACE_2, dp(18), BORDER)); menu.setOnClickListener(v -> showDrawer()); header.addView(menu, frame(dp(48), dp(48), Gravity.START | Gravity.CENTER_VERTICAL));
-        LinearLayout title = column(c); title.setGravity(Gravity.CENTER); sessionTitle = label(c, session.title, 16, false); sessionTitle.setGravity(Gravity.CENTER); sessionTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL)); title.addView(sessionTitle); TextView subtitle = label(c, "Dayven AI", 11, false); subtitle.setTextColor(MUTED); subtitle.setGravity(Gravity.CENTER); title.addView(subtitle); FrameLayout.LayoutParams tp = frame(-1, -2, Gravity.CENTER); tp.leftMargin = dp(60); tp.rightMargin = dp(112); header.addView(title, tp);
-        LinearLayout actions = row(c);
-        MaterialButton settings = icon(c, "⚙", "AI providers and settings");
-        settings.setBackground(stroke(SURFACE_2, dp(18), BORDER));
-        settings.setOnClickListener(v -> {
-            if (activeSettingsPage != null) closeSettings();
-            else showSettings();
+        root = new FrameLayout(c); 
+        root.setLayoutParams(new ViewGroup.LayoutParams(-1, -1));
+        root.setBackgroundColor(BG);
+        
+        // Header
+        header = new FrameLayout(c);
+        header.setBackgroundColor(SURFACE);
+        header.setElevation(dp(2));
+        
+        MaterialButton menuBtn = icon(c, "☰", "Menu");
+        menuBtn.setOnClickListener(v -> showDrawer());
+        header.addView(menuBtn, frame(dp(56), dp(56), Gravity.START | Gravity.CENTER_VERTICAL));
+        
+        LinearLayout titleGroup = column(c);
+        titleGroup.setGravity(Gravity.CENTER);
+        sessionTitle = label(c, session.title, 16, true);
+        sessionTitle.setTextColor(TEXT_PRIMARY);
+        titleGroup.addView(sessionTitle);
+        TextView subtitle = label(c, "Dayven AI · Assistant", 11, false);
+        subtitle.setTextColor(TEXT_SECONDARY);
+        titleGroup.addView(subtitle);
+        header.addView(titleGroup, frame(-1, -2, Gravity.CENTER));
+        
+        MaterialButton settingsBtn = icon(c, "⚙", "Settings");
+        settingsBtn.setOnClickListener(v -> showSettings());
+        header.addView(settingsBtn, frame(dp(56), dp(56), Gravity.END | Gravity.CENTER_VERTICAL));
+        
+        root.addView(header, frame(-1, dp(64), Gravity.TOP));
+
+        // Content Area
+        LinearLayout content = column(c);
+        
+        // Status Bar (Heartbeat & Tokens)
+        LinearLayout statusBar = row(c);
+        statusBar.setGravity(Gravity.CENTER_VERTICAL);
+        statusBar.setPadding(dp(16), dp(8), dp(16), dp(8));
+        statusBar.setBackgroundColor(SURFACE);
+        
+        View indicator = new View(c);
+        indicator.setBackground(round(Color.LTGRAY, 6));
+        statusBar.addView(indicator, new LinearLayout.LayoutParams(dp(8), dp(8)));
+        
+        statusText = label(c, "Connecting...", 12, false);
+        statusText.setPadding(dp(8), 0, 0, 0);
+        statusText.setTextColor(TEXT_SECONDARY);
+        statusBar.addView(statusText, weight(1));
+        
+        tokenText = label(c, "0 tokens", 11, false);
+        tokenText.setTextColor(TEXT_SECONDARY);
+        statusBar.addView(tokenText);
+        
+        content.addView(statusBar, new LinearLayout.LayoutParams(-1, -2));
+
+        // Transcript
+        transcript = new ScrollView(c);
+        transcript.setFillViewport(true);
+        messages = column(c);
+        messages.setPadding(dp(16), dp(16), dp(16), dp(80));
+        transcript.addView(messages, new ViewGroup.LayoutParams(-1, -2));
+        content.addView(transcript, weight(1));
+
+        FrameLayout.LayoutParams contentParams = frame(-1, -1, Gravity.TOP);
+        contentParams.topMargin = dp(64);
+        root.addView(content, contentParams);
+
+        // Composer Bar
+        composerRow = buildComposer(c);
+        root.addView(composerRow, frame(-1, -2, Gravity.BOTTOM));
+
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            int bottom = Math.max(bars.bottom, ime.bottom);
+            composerRow.setPadding(dp(12), dp(12), dp(12), bottom + dp(12));
+            return insets;
         });
-        MaterialButton exit = icon(c, "×", "Exit Agent"); exit.setBackground(stroke(SURFACE_2, dp(18), BORDER)); exit.setOnClickListener(v -> AgentTabEnhancer.exitAgent(requireActivity()));
-        actions.addView(settings, new LinearLayout.LayoutParams(dp(48), dp(48))); actions.addView(exit, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        FrameLayout.LayoutParams ap = frame(-2, dp(48), Gravity.END | Gravity.CENTER_VERTICAL); ap.rightMargin = dp(4); header.addView(actions, ap); root.addView(header, frame(-1, dp(60), Gravity.TOP));
 
-        LinearLayout status = row(c); status.setGravity(Gravity.CENTER_VERTICAL); status.setPadding(dp(12), 0, dp(8), 0); status.setBackground(round(SURFACE_3, dp(18)));
-        TextView dot = label(c, "●", 11, false); dot.setGravity(Gravity.CENTER); dot.setTextColor(MINT); status.addView(dot, new LinearLayout.LayoutParams(dp(24), dp(40)));
-        statusText = label(c, "Offline · sambungkan API", 12, true); statusText.setTextColor(MUTED); status.addView(statusText, weight(1));
-        tokenText = label(c, "", 10, false); tokenText.setTextColor(MUTED); status.addView(tokenText, new LinearLayout.LayoutParams(-2, dp(40)));
-        TextView auto = label(c, "AUTO", 10, true); auto.setGravity(Gravity.CENTER); auto.setTextColor(MINT); auto.setPadding(dp(12), 0, dp(12), 0); auto.setBackground(stroke(Color.TRANSPARENT, dp(14), MINT_DARK)); status.addView(auto, new LinearLayout.LayoutParams(-2, dp(34)));
-        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1, dp(44)); statusParams.setMargins(dp(2), dp(8), dp(2), dp(2)); content.addView(status, statusParams);
-
-        transcript = new ScrollView(c); transcript.setFillViewport(true); transcript.setSmoothScrollingEnabled(true); transcript.setClipToPadding(false);
-        messages = column(c); messages.setPadding(0, dp(8), 0, dp(8)); transcript.addView(messages, new ViewGroup.LayoutParams(-1, -2)); content.addView(transcript, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        composerRow = composerBar(c); root.addView(composerRow, frame(-1, -2, Gravity.BOTTOM));
-        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> applyInsets(insets));
-        ViewCompat.requestApplyInsets(root);
         restoreSession();
         return root;
     }
 
-    private WindowInsetsCompat applyInsets(WindowInsetsCompat insets) {
-        Insets bars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.navigationBars());
-        Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-        int top = Math.max(bars.top + dp(18), dp(96)); int bottom = Math.max(bars.bottom, ime.bottom) + dp(12);
-        FrameLayout.LayoutParams hp = (FrameLayout.LayoutParams) header.getLayoutParams(); hp.topMargin = top; header.setLayoutParams(hp);
-        FrameLayout.LayoutParams cp = (FrameLayout.LayoutParams) content.getLayoutParams(); cp.topMargin = top + dp(68); cp.bottomMargin = bottom + dp(58); content.setLayoutParams(cp);
-        FrameLayout.LayoutParams bp = (FrameLayout.LayoutParams) composerRow.getLayoutParams(); bp.leftMargin = dp(10); bp.rightMargin = dp(10); bp.bottomMargin = bottom; composerRow.setLayoutParams(bp);
-        if (ime.bottom > 0) root.postDelayed(() -> { scrollBottom(); composer.requestRectangleOnScreen(new android.graphics.Rect(0, 0, composer.getWidth(), composer.getHeight()), false); }, 90);
-        return insets;
-    }
-
-    private LinearLayout composerBar(Context c) {
-        LinearLayout bar = row(c); bar.setGravity(Gravity.CENTER_VERTICAL); bar.setPadding(dp(4), dp(4), dp(4), dp(4)); bar.setElevation(dp(8)); bar.setBackground(stroke(SURFACE, dp(28), BORDER));
-        MaterialButton attach = icon(c, "＋", "Lampirkan konteks"); attach.setBackground(round(SURFACE_2, dp(22))); bar.addView(attach, new LinearLayout.LayoutParams(dp(46), dp(46)));
-        composer = new EditText(c); composer.setHint("Tulis pesan untuk Dayven AI…"); composer.setHintTextColor(Color.rgb(128, 143, 135)); composer.setTextColor(TEXT); composer.setTextSize(15); composer.setGravity(Gravity.CENTER_VERTICAL | Gravity.START); composer.setPadding(dp(10), 0, dp(8), 0); composer.setMinHeight(dp(48)); composer.setMaxLines(5); composer.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE); composer.setBackgroundColor(Color.TRANSPARENT);
-        composer.setOnFocusChangeListener((v, focused) -> { if (focused) v.postDelayed(() -> { ViewCompat.requestApplyInsets(root); scrollBottom(); }, 100); }); bar.addView(composer, weight(1));
-        micButton = icon(c, "◉", "Voice input"); micButton.setBackground(round(SURFACE_2, dp(22))); bar.addView(micButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
-        sendButton = icon(c, "↑", "Kirim pesan"); sendButton.setTextColor(Color.rgb(5, 25, 18)); sendButton.setBackground(round(MINT, dp(24))); sendButton.setVisibility(View.GONE); bar.addView(sendButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
-        sendButton.setOnClickListener(v -> { v.setScaleX(.86f); v.setScaleY(.86f); v.animate().scaleX(1f).scaleY(1f).setDuration(150).start(); send(); });
+    private LinearLayout buildComposer(Context c) {
+        LinearLayout bar = row(c);
+        bar.setGravity(Gravity.BOTTOM);
+        bar.setPadding(dp(12), dp(12), dp(12), dp(12));
+        
+        LinearLayout inputArea = row(c);
+        inputArea.setGravity(Gravity.BOTTOM);
+        inputArea.setBackground(stroke(SURFACE, dp(24), BORDER));
+        inputArea.setPadding(dp(8), dp(4), dp(8), dp(4));
+        
+        MaterialButton attachButton = icon(c, "＋", "Attach");
+        inputArea.addView(attachButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        
+        composer = new EditText(c);
+        composer.setHint("Message Dayven AI...");
+        composer.setHintTextColor(TEXT_SECONDARY);
+        composer.setTextColor(TEXT_PRIMARY);
+        composer.setBackground(null);
+        composer.setTextSize(15);
+        composer.setMaxLines(6);
+        composer.setPadding(dp(8), dp(8), dp(8), dp(8));
+        inputArea.addView(composer, weight(1));
+        
+        sendButton = icon(c, "↑", "Send");
+        sendButton.setBackgroundTintList(ColorStateList.valueOf(ACCENT));
+        sendButton.setTextColor(Color.WHITE);
+        sendButton.setVisibility(View.GONE);
+        sendButton.setOnClickListener(v -> send());
+        inputArea.addView(sendButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        
+        bar.addView(inputArea, weight(1));
+        
         composer.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { boolean has = s != null && s.toString().trim().length() > 0; sendButton.setVisibility(has ? View.VISIBLE : View.GONE); micButton.setVisibility(has ? View.GONE : View.VISIBLE); }
-            @Override public void afterTextChanged(Editable s) { }
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                boolean hasText = s != null && s.toString().trim().length() > 0;
+                sendButton.setVisibility(hasText ? View.VISIBLE : View.GONE);
+            }
+            @Override public void afterTextChanged(Editable s) {}
         });
+        
         return bar;
     }
 
     private void restoreSession() {
         messages.removeAllViews();
         if (session.messages.isEmpty()) {
-            addAssistant("Saya siap membantu proyek Sketchware kamu. Kirim bug, ide fitur, atau potongan kode. Untuk perubahan project, saya akan menampilkan proposal terlebih dahulu supaya kamu bisa meninjau dan memilih Accept atau Cancel.");
+            addAssistant(GREETING);
         } else {
-            for (AgentWorkspaceStore.Message m : session.messages) bubble(m.text, "user".equals(m.role));
+            for (AgentWorkspaceStore.Message m : session.messages) {
+                bubble(m.text, "user".equals(m.role));
+            }
         }
         scrollBottom();
+    }
+
+    private void addAssistant(String text) {
+        bubble(text, false);
     }
 
     private void send() {
         if (busy) return;
         String prompt = composer.getText().toString().trim();
         if (prompt.isEmpty()) return;
+        
         if (profiles.stream().noneMatch(p -> p.enabled && !p.key.isEmpty())) {
-            addAssistant("Gemini belum aktif. Buka Settings, masukkan API key, lakukan Check, lalu Save & aktifkan profilnya.");
+            addAssistant("API Key belum dikonfigurasi. Silakan ke Settings untuk menambahkan API Key Gemini.");
             showSettings();
             return;
         }
+
         composer.setText("");
         store.append(session.id, "user", prompt);
         session = store.getSession(session.id);
         sessionTitle.setText(session.title);
+        
         bubble(prompt, true);
         busy = true;
         triedRoutes.clear();
+        
         addThinking();
-        runDiscoveryThenRoute(promptFor(prompt), prompt, 0);
+        
+        String request = AgentPromptOptimizer.build(prompt, AgentProjectContext.build(requireContext(), projectId, selectedFile));
+        runDiscoveryThenRoute(request, prompt, 0);
     }
 
     private void addThinking() {
-        LinearLayout line = row(requireContext()); line.setGravity(Gravity.START | Gravity.CENTER_VERTICAL); line.setTag("thinking");
-        TextView t = label(requireContext(), THINKING, 13, false); t.setTextColor(MUTED); t.setPadding(dp(14), dp(10), dp(14), dp(10)); t.setBackground(stroke(SURFACE_3, dp(16), MINT_DARK));
-        line.addView(t, new LinearLayout.LayoutParams(-2, -2));
-        thinkingLine = line;
-        messages.addView(line, new LinearLayout.LayoutParams(-1, -2)); scrollBottom();
+        LinearLayout container = column(requireContext());
+        container.setTag("thinking");
+        
+        TextView t = label(requireContext(), THINKING, 13, false);
+        t.setTextColor(TEXT_SECONDARY);
+        t.setPadding(dp(12), dp(8), dp(12), dp(8));
+        t.setBackground(round(AI_BUBBLE, 12));
+        
+        container.addView(t);
+        messages.addView(container);
+        scrollBottom();
     }
 
     private void removeThinking() {
-        for (int i = messages.getChildCount() - 1; i >= 0; i--) {
-            View v = messages.getChildAt(i);
-            if ("thinking".equals(v.getTag())) messages.removeViewAt(i);
-        }
-        thinkingLine = null;
-    }
-
-    private String promptFor(String prompt) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("You are Dayven AI, an intelligent coding companion inside Sketchware-DayGreen.\n");
-        sb.append("Follow these rules strictly:\n");
-        sb.append("1. Answer the user's immediate question or greeting directly, naturally, and relevantly.\n");
-        sb.append("2. If the user sends a greeting (like 'hai', 'halo', 'siapa kamu'), respond directly and warmly in the same language. Do NOT output compilation error diagnoses or unsolicited code unless specifically asked.\n");
-        sb.append("3. For any project modification, finish with exactly one proposal: TARGET: safe relative path, then one fenced code block with replacement content.\n");
-
-        boolean needsProjectContext = MUTATING.matcher(prompt).find() || prompt.toLowerCase(Locale.US).contains("error") || prompt.toLowerCase(Locale.US).contains("bug");
-        if (needsProjectContext) {
-            String ctx = AgentProjectContext.build(requireContext(), projectId, selectedFile);
-            sb.append("\nPROJECT CONTEXT:\n").append(ctx).append("\n");
-        }
-
-        sb.append("\nRECENT CONVERSATION:\n");
-        int start = Math.max(0, session.messages.size() - 6);
-        for (int i = start; i < session.messages.size(); i++) {
-            AgentWorkspaceStore.Message m = session.messages.get(i);
-            sb.append(m.role).append(": ").append(m.text).append("\n");
-        }
-        sb.append("\nUSER: ").append(prompt);
-        return sb.toString();
+        View v = messages.findViewWithTag("thinking");
+        if (v != null) messages.removeView(v);
     }
 
     private void runDiscoveryThenRoute(String request, String original, int index) {
         profiles = store.getProfiles();
-        if (index >= profiles.size()) { runRoutes(request, original); return; }
+        if (index >= profiles.size()) {
+            runRoutes(request, original);
+            return;
+        }
+        
         AgentWorkspaceStore.Profile p = profiles.get(index);
         if (!p.enabled || p.key.isEmpty() || !p.models.isEmpty()) {
             runDiscoveryThenRoute(request, original, index + 1);
             return;
         }
+
         client.listModels(p.key, new GeminiAutoClient.Listener() {
             @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) {
                 p.models.clear();
                 for (GeminiAutoClient.ModelInfo m : models) if (m.text()) p.models.add(m.id());
                 p.rate = remaining;
-                p.lastError = p.models.isEmpty() ? "No valid text model" : "Validated";
                 store.saveProfiles(profiles);
                 main.post(() -> runDiscoveryThenRoute(request, original, index + 1));
             }
-            @Override public void onDelta(String text) { }
-            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) { }
+            @Override public void onDelta(String text) {}
+            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) {}
             @Override public void onError(int status, String message, String remaining, String retry) {
                 p.lastError = message;
-                p.rate = remaining;
-                p.failures++;
                 store.saveProfiles(profiles);
                 main.post(() -> runDiscoveryThenRoute(request, original, index + 1));
             }
@@ -280,7 +347,7 @@ public final class AgentFragmentV2 extends Fragment {
     private void runRoutes(String request, String original) {
         List<Route> routes = routesFor(original);
         if (routes.isEmpty()) {
-            finishError("Tidak ada model Gemini teks yang valid. Buka Settings dan validasi API key.");
+            finishError("No valid AI models found. Please check your API keys in Settings.");
             return;
         }
         streamRoute(request, original, routes, 0);
@@ -289,48 +356,52 @@ public final class AgentFragmentV2 extends Fragment {
     private List<Route> routesFor(String prompt) {
         List<Route> out = new ArrayList<>();
         profiles = store.getProfiles();
-        boolean hard = prompt.length() > 240 || MUTATING.matcher(prompt).find() || prompt.toLowerCase(Locale.US).contains("error");
-        boolean easy = prompt.length() < 90 && !MUTATING.matcher(prompt).find();
+        
+        // Intelligence levels
+        boolean complex = MUTATING.matcher(prompt).find() || prompt.length() > 300;
+        
         for (AgentWorkspaceStore.Profile p : profiles) {
             if (p.enabled && !p.key.isEmpty()) {
                 List<String> models = new ArrayList<>(p.models);
                 if (models.isEmpty()) {
                     models.add("gemini-1.5-flash");
-                    models.add("gemini-2.0-flash");
                     models.add("gemini-1.5-pro");
                 }
-                models.sort(Comparator.comparingInt(m -> rank(m, hard, easy)));
+                
+                // Sort by complexity: Pro for complex, Flash for simple
+                models.sort((m1, m2) -> {
+                    int r1 = rank(m1, complex);
+                    int r2 = rank(m2, complex);
+                    return Integer.compare(r1, r2);
+                });
+                
                 for (String m : models) out.add(new Route(p, m));
             }
         }
         return out;
     }
 
-    private int rank(String model, boolean hard, boolean easy) {
-        String m = model.toLowerCase(Locale.US);
-        if (m.contains("tts") || m.contains("audio")) return 99;
-        boolean pro = m.contains("pro");
-        boolean lite = m.contains("flash") || m.contains("lite");
-        if (hard) return pro ? 0 : lite ? 2 : 1;
-        if (easy) return lite ? 0 : pro ? 2 : 1;
-        return lite ? 0 : pro ? 1 : 2;
+    private int rank(String model, boolean complex) {
+        String m = model.toLowerCase();
+        if (complex) return m.contains("pro") ? 0 : 1;
+        return m.contains("flash") ? 0 : 1;
     }
 
     private void streamRoute(String request, String original, List<Route> routes, int index) {
         if (index >= routes.size()) {
-            busy = false;
-            removeThinking();
-            finishError("Semua API key/model yang aktif gagal atau terkena limit. Tambahkan atau cek API key cadangan di Settings.");
+            finishError("Limit tercapai atau API gagal. Coba tambah API Key cadangan.");
             return;
         }
-        Route route = routes.get(index);
-        String key = route.profile.id + ":" + route.model;
-        if (!triedRoutes.add(key)) { streamRoute(request, original, routes, index + 1); return; }
-        route.profile.lastUsed = System.currentTimeMillis();
-        liveAssistant = null;
 
+        Route route = routes.get(index);
+        if (!triedRoutes.add(route.profile.id + ":" + route.model)) {
+            streamRoute(request, original, routes, index + 1);
+            return;
+        }
+
+        liveAssistant = null;
         client.stream(route.profile.key, route.model, request, new GeminiAutoClient.Listener() {
-            @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retryAfter) { }
+            @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) {}
             @Override public void onDelta(String text) {
                 main.post(() -> {
                     removeThinking();
@@ -339,553 +410,376 @@ public final class AgentFragmentV2 extends Fragment {
                     scrollBottom();
                 });
             }
-            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retryAfter) {
+            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) {
                 main.post(() -> {
                     busy = false;
-                    removeThinking();
                     route.profile.rate = remaining;
-                    route.profile.lastError = "";
                     store.saveProfiles(profiles);
-                    tokenText.setText(usage.label().isEmpty() ? remaining : usage.label());
+                    tokenText.setText(usage.label());
                     if (liveAssistant != null) {
                         String full = liveAssistant.getText().toString();
                         liveAssistant.setText(richText(full));
                         store.append(session.id, "assistant", full);
-                        session = store.getSession(session.id);
                         if (MUTATING.matcher(original).find()) showProposal(full);
                     }
                 });
             }
-            @Override public void onError(int status, String message, String remaining, String retryAfter) {
+            @Override public void onError(int status, String message, String remaining, String retry) {
                 main.post(() -> {
-                    route.profile.lastError = message;
-                    route.profile.rate = remaining;
-                    route.profile.failures++;
-                    store.saveProfiles(profiles);
                     if (liveAssistant != null && liveAssistant.getText().length() > 0) {
                         busy = false;
-                        removeThinking();
                         return;
                     }
-                    if (status == 429 || status == 403 || status == 404 || status == 400 || status == 0) {
-                        streamRoute(request, original, routes, index + 1);
-                    } else {
-                        busy = false;
-                        removeThinking();
-                        finishError(message);
-                    }
+                    streamRoute(request, original, routes, index + 1);
                 });
             }
         });
+    }
+
+    private void bubble(String text, boolean user) {
+        LinearLayout line = row(requireContext());
+        line.setGravity(user ? Gravity.END : Gravity.START);
+        
+        LinearLayout col = column(requireContext());
+        col.setGravity(user ? Gravity.END : Gravity.START);
+        
+        TextView bubble = label(requireContext(), user ? text : richText(text), 15, false);
+        bubble.setTextColor(TEXT_PRIMARY);
+        bubble.setPadding(dp(16), dp(12), dp(16), dp(12));
+        bubble.setBackground(round(user ? USER_BUBBLE : AI_BUBBLE, 18));
+        bubble.setMaxWidth(Math.round(getResources().getDisplayMetrics().widthPixels * 0.8f));
+        
+        col.addView(bubble);
+        
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.setMargins(0, dp(4), 0, dp(4));
+        line.addView(col, lp);
+        
+        messages.addView(line);
+    }
+
+    private TextView addAssistantBubble(String text) {
+        LinearLayout line = row(requireContext());
+        line.setGravity(Gravity.START);
+        
+        TextView bubble = label(requireContext(), richText(text), 15, false);
+        bubble.setTextColor(TEXT_PRIMARY);
+        bubble.setPadding(dp(16), dp(12), dp(16), dp(12));
+        bubble.setBackground(round(AI_BUBBLE, 18));
+        bubble.setMaxWidth(Math.round(getResources().getDisplayMetrics().widthPixels * 0.8f));
+        
+        line.addView(bubble);
+        messages.addView(line);
+        return bubble;
     }
 
     private void showProposal(String answer) {
         AgentActionExecutor.Action parsed = AgentActionExecutor.parse(answer);
         if (parsed == null) return;
-        LinearLayout line = row(requireContext()); line.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        line.addView(avatar(), new LinearLayout.LayoutParams(dp(32), dp(32)));
-        LinearLayout card = column(requireContext()); card.setPadding(dp(14), dp(12), dp(14), dp(12)); card.setBackground(stroke(SURFACE_2, dp(18), BORDER));
-        TextView proposalTitle = label(requireContext(), "Review perubahan", 13, true);
-        proposalTitle.setTextColor(MINT);
-        card.addView(proposalTitle);
-        TextView target = label(requireContext(), parsed.target, 12, false);
-        target.setTextColor(TEXT);
-        target.setPadding(0, dp(4), 0, dp(8));
-        card.addView(target);
-        TextView preview = label(requireContext(), preview(parsed.content), 12, false);
-        preview.setTextColor(Color.rgb(197, 229, 211));
-        preview.setTypeface(Typeface.MONOSPACE);
-        preview.setPadding(dp(10), dp(9), dp(10), dp(9));
-        preview.setBackground(round(CODE_BG, dp(10)));
-        card.addView(preview);
-        TextView warning = label(requireContext(), "Belum diterapkan · pilih Accept untuk melanjutkan", 11, false);
-        warning.setTextColor(MUTED);
-        warning.setPadding(0, dp(8), 0, dp(4));
-        card.addView(warning);
-        LinearLayout buttons = row(requireContext());
-        MaterialButton cancel = smallButton("Cancel");
-        MaterialButton accept = smallButton("Accept");
-        cancel.setTextColor(MUTED);
-        cancel.setBackground(stroke(SURFACE_3, dp(14), BORDER));
-        accept.setTextColor(Color.rgb(7, 30, 22));
-        accept.setBackground(round(MINT, dp(14)));
-        buttons.addView(cancel, weight(1)); buttons.addView(accept, weight(1));
-        card.addView(buttons);
-        line.addView(card, weight(1));
-        messages.addView(line, new LinearLayout.LayoutParams(-1, -2));
-        cancel.setOnClickListener(v -> { messages.removeView(line); addAssistant("Dibatalkan. Tidak ada perubahan yang diterapkan."); });
-        accept.setOnClickListener(v -> { messages.removeView(line); accept(parsed); });
+
+        LinearLayout card = column(requireContext());
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setBackground(stroke(SURFACE, dp(16), BORDER));
+        
+        TextView title = label(requireContext(), "Proposed Changes", 14, true);
+        title.setTextColor(ACCENT);
+        card.addView(title);
+        
+        TextView file = label(requireContext(), parsed.target, 12, false);
+        file.setTextColor(TEXT_SECONDARY);
+        file.setPadding(0, dp(4), 0, dp(8));
+        card.addView(file);
+        
+        LinearLayout actions = row(requireContext());
+        MaterialButton cancel = ghostButton("Cancel");
+        MaterialButton accept = solidButton("Accept Changes");
+        
+        actions.addView(cancel, weight(1));
+        actions.addView(accept, weight(1.5f));
+        card.addView(actions);
+        
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
+        cardParams.setMargins(0, dp(12), 0, dp(12));
+        messages.addView(card, cardParams);
+        
+        cancel.setOnClickListener(v -> {
+            messages.removeView(card);
+            addAssistant("Changes cancelled.");
+        });
+        
+        accept.setOnClickListener(v -> {
+            messages.removeView(card);
+            executeAction(parsed);
+        });
+        
         scrollBottom();
     }
 
-    private void accept(AgentActionExecutor.Action action) {
-        if (action == null) return;
+    private void executeAction(AgentActionExecutor.Action action) {
         if (action.isXml()) {
             Intent i = new Intent(requireContext(), ViewCodeEditorActivity.class);
-            i.putExtra("sc_id", projectId); i.putExtra("title", action.target); i.putExtra("content", action.content);
+            i.putExtra("sc_id", projectId);
+            i.putExtra("title", action.target);
+            i.putExtra("content", action.content);
             startActivity(i);
-            addAssistant("Proposal diterima. XML dibuka di Direct XML untuk ditinjau dan disimpan.");
-            return;
+            addAssistant("Proposal diterima. Silakan tinjau dan simpan di Direct XML Editor.");
+        } else {
+            String res = AgentActionExecutor.apply(requireContext(), projectId, action);
+            addAssistant(res.startsWith("APPLIED") ? "Perubahan berhasil diterapkan! ✨" : "Gagal menerapkan: " + res);
         }
-        String result = AgentActionExecutor.apply(requireContext(), projectId, action);
-        addAssistant(result.startsWith("APPLIED") ? "Selesai. Perubahan diterapkan sesuai proposal." : "Belum diterapkan: " + result);
     }
 
     private void showDrawer() {
-        final FrameLayout layer = new FrameLayout(requireContext());
-        layer.setBackgroundColor(Color.argb(165, 0, 0, 0));
-        LinearLayout panel = column(requireContext());
-        panel.setBackground(stroke(BG, 0, BORDER));
-        panel.setPadding(dp(18), dp(18), dp(10), dp(12));
-        LinearLayout drawerHeader = row(requireContext());
-        drawerHeader.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout brand = column(requireContext());
-        brand.addView(label(requireContext(), "Dayven AI", 22, true));
-        TextView drawerSubtitle = label(requireContext(), "Percakapan tersimpan", 12, false);
-        drawerSubtitle.setTextColor(MUTED);
-        brand.addView(drawerSubtitle);
-        drawerHeader.addView(brand, weight(1));
-        MaterialButton close = icon(requireContext(), "×", "Tutup riwayat chat");
-        close.setBackground(round(SURFACE_2, dp(16)));
-        close.setOnClickListener(v -> {
-            ViewGroup parent = (ViewGroup) layer.getParent();
-            if (parent != null) parent.removeView(layer);
-        });
-        drawerHeader.addView(close, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        panel.addView(drawerHeader);
-
-        MaterialButton fresh = smallButton("＋  Chat baru");
-        fresh.setTextColor(Color.rgb(7, 30, 22));
-        fresh.setBackground(round(MINT, dp(18)));
-        fresh.setOnClickListener(v -> {
-            session = store.newSession("New chat");
+        final FrameLayout overlay = new FrameLayout(requireContext());
+        overlay.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        overlay.setBackgroundColor(Color.argb(100, 0, 0, 0));
+        
+        LinearLayout drawer = column(requireContext());
+        drawer.setBackgroundColor(SURFACE);
+        drawer.setPadding(dp(20), dp(20), dp(20), dp(20));
+        
+        TextView head = label(requireContext(), "Chat History", 20, true);
+        head.setPadding(0, 0, 0, dp(20));
+        drawer.addView(head);
+        
+        MaterialButton newChat = solidButton("＋ New Chat");
+        newChat.setOnClickListener(v -> {
+            session = store.newSession("New Chat");
             sessionTitle.setText(session.title);
             restoreSession();
-            ((ViewGroup) layer.getParent()).removeView(layer);
+            root.removeView(overlay);
         });
-        LinearLayout.LayoutParams freshParams = new LinearLayout.LayoutParams(-1, dp(50));
-        freshParams.setMargins(0, dp(18), dp(8), dp(16));
-        panel.addView(fresh, freshParams);
-        TextView recent = label(requireContext(), "TERBARU", 10, true);
-        recent.setTextColor(MUTED);
-        recent.setPadding(dp(4), 0, 0, dp(8));
-        panel.addView(recent);
-
-        ScrollView listScroll = new ScrollView(requireContext());
-        listScroll.setFillViewport(true);
+        drawer.addView(newChat, new LinearLayout.LayoutParams(-1, -2));
+        
+        ScrollView scroll = new ScrollView(requireContext());
         LinearLayout list = column(requireContext());
         for (AgentWorkspaceStore.Session s : store.getSessions()) {
-            LinearLayout item = row(requireContext());
-            item.setGravity(Gravity.CENTER_VERTICAL);
-            item.setPadding(dp(12), dp(8), dp(6), dp(8));
-            item.setBackground(round(s.id.equals(session.id) ? SURFACE_2 : Color.TRANSPARENT, 14));
-            LinearLayout copy = column(requireContext());
-            TextView title = label(requireContext(), s.title, 14, s.id.equals(session.id));
-            title.setTextColor(TEXT);
-            copy.addView(title);
-            String preview = s.messages.isEmpty() ? "Percakapan baru" : s.messages.get(s.messages.size() - 1).text;
-            TextView snippet = label(requireContext(), compactPreview(preview), 11, false);
-            snippet.setTextColor(MUTED);
-            copy.addView(snippet);
-            item.addView(copy, weight(1));
-            MaterialButton delete = icon(requireContext(), "⋯", "Opsi chat");
-            delete.setTextColor(MUTED);
-            delete.setTextSize(18);
-            delete.setBackgroundColor(Color.TRANSPARENT);
-            item.addView(delete, new LinearLayout.LayoutParams(dp(38), dp(44)));
+            TextView item = label(requireContext(), s.title, 14, false);
+            item.setPadding(dp(12), dp(16), dp(12), dp(16));
+            item.setBackground(round(s.id.equals(session.id) ? ACCENT_LIGHT : Color.TRANSPARENT, 8));
             item.setOnClickListener(v -> {
                 session = store.getSession(s.id);
                 store.selectSession(s.id);
                 sessionTitle.setText(session.title);
                 restoreSession();
-                ((ViewGroup) layer.getParent()).removeView(layer);
-            });
-            delete.setOnClickListener(v -> {
-                store.deleteSession(s.id);
-                session = store.getOrCreateCurrent();
-                sessionTitle.setText(session.title);
-                restoreSession();
-                ViewGroup parent = (ViewGroup) layer.getParent();
-                if (parent != null) parent.removeView(layer);
+                root.removeView(overlay);
             });
             list.addView(item);
         }
-        listScroll.addView(list);
-        panel.addView(listScroll, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        FrameLayout.LayoutParams pp = frame(-1, -1, Gravity.START);
-        pp.width = Math.round(getResources().getDisplayMetrics().widthPixels * .86f);
-        pp.topMargin = dp(72); pp.bottomMargin = dp(8);
-        layer.addView(panel, pp);
-        layer.setOnClickListener(v -> { if (v == layer) ((ViewGroup) layer.getParent()).removeView(layer); });
-        root.addView(layer, frame(-1, -1, Gravity.TOP));
-    }
-
-    private String compactPreview(String value) {
-        if (value == null) return "";
-        String clean = value.replace('\n', ' ').replaceAll("\\s+", " ").trim();
-        return clean.length() > 42 ? clean.substring(0, 42) + "…" : clean;
-    }
-
-    private void closeSettings() {
-        if (activeSettingsPage != null) {
-            ViewGroup parent = (ViewGroup) activeSettingsPage.getParent();
-            if (parent != null) parent.removeView(activeSettingsPage);
-            activeSettingsPage = null;
-        }
+        scroll.addView(list);
+        drawer.addView(scroll, weight(1));
+        
+        overlay.addView(drawer, new FrameLayout.LayoutParams(Math.round(getResources().getDisplayMetrics().widthPixels * 0.8f), -1));
+        overlay.setOnClickListener(v -> root.removeView(overlay));
+        root.addView(overlay);
     }
 
     private void showSettings() {
-        closeSettings();
+        if (activeSettingsPage != null) return;
+        
         final FrameLayout page = new FrameLayout(requireContext());
+        page.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
         activeSettingsPage = page;
         page.setBackgroundColor(BG);
-
+        
         LinearLayout body = column(requireContext());
-        body.setPadding(dp(18), dp(18), dp(18), dp(18));
-
-        LinearLayout top = row(requireContext());
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        MaterialButton back = icon(requireContext(), "‹", "Back to Chat");
-        back.setBackground(round(SURFACE_2, 14));
-        back.setOnClickListener(v -> closeSettings());
-        top.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-
-        TextView title = label(requireContext(), "AI Providers & Settings", 18, true);
-        title.setPadding(dp(12), 0, 0, 0);
-        top.addView(title, weight(1));
-
-        MaterialButton closeBtn = icon(requireContext(), "×", "Close Settings");
-        closeBtn.setBackground(round(SURFACE_2, 14));
-        closeBtn.setOnClickListener(v -> closeSettings());
-        top.addView(closeBtn, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        body.addView(top);
-
-        TextView sub = label(requireContext(), "Kelola Google AI Studio / Gemini API Key (API 1, API 2, API 3, dst)", 12, false);
-        sub.setTextColor(MUTED);
-        sub.setPadding(0, dp(10), 0, dp(10));
-        body.addView(sub);
-
-        providerList = column(requireContext());
+        body.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        body.setPadding(dp(20), dp(40), dp(20), dp(20));
+        
+        TextView t = label(requireContext(), "AI Providers", 22, true);
+        body.addView(t);
+        
         ScrollView scroll = new ScrollView(requireContext());
-        scroll.setFillViewport(true);
+        providerList = column(requireContext());
         scroll.addView(providerList);
-        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        LinearLayout bottomActions = row(requireContext());
-        bottomActions.setPadding(0, dp(10), 0, dp(4));
-
-        MaterialButton add = smallButton("＋ Tambah API Gemini Baru");
-        add.setOnClickListener(v -> {
+        body.addView(scroll, weight(1));
+        
+        MaterialButton addBtn = ghostButton("＋ Add Gemini API Key");
+        addBtn.setOnClickListener(v -> {
             store.addProfile("Gemini " + (store.getProfiles().size() + 1));
-            renderProviders();
+            refreshSettings();
         });
-        bottomActions.addView(add, weight(1));
-
-        MaterialButton backChat = smallButton("← Kembali ke Chat");
-        backChat.setTextColor(MINT);
-        backChat.setOnClickListener(v -> closeSettings());
-        bottomActions.addView(backChat, weight(1));
-        body.addView(bottomActions);
-
-        page.addView(body, frame(-1, -1, Gravity.TOP));
-        root.addView(page, frame(-1, -1, Gravity.TOP));
-
-        ViewCompat.setOnApplyWindowInsetsListener(page, (v, insets) -> {
-            Insets b = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.navigationBars());
-            body.setPadding(dp(18), Math.max(b.top + dp(14), dp(48)), dp(18), Math.max(b.bottom + dp(14), dp(16)));
-            return insets;
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(-1, -2);
+        addParams.topMargin = dp(12);
+        body.addView(addBtn, addParams);
+        
+        MaterialButton close = solidButton("Close");
+        close.setOnClickListener(v -> {
+            root.removeView(page);
+            activeSettingsPage = null;
         });
-        ViewCompat.requestApplyInsets(page);
-        renderProviders();
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(-1, -2);
+        closeParams.topMargin = dp(12);
+        body.addView(close, closeParams);
+        
+        page.addView(body);
+        root.addView(page);
+        refreshSettings();
     }
 
-    private void renderProviders() {
+    private void refreshSettings() {
         if (providerList == null) return;
         providerList.removeAllViews();
         profiles = store.getProfiles();
-        for (AgentWorkspaceStore.Profile p : profiles) addProviderCard(p);
+        
         if (profiles.isEmpty()) {
-            providerList.addView(label(requireContext(), "Belum ada API profile. Klik tombol tambah di bawah.", 14, false));
+            TextView empty = label(requireContext(), "No API keys added yet.", 14, false);
+            empty.setPadding(0, dp(20), 0, dp(20));
+            empty.setGravity(Gravity.CENTER);
+            providerList.addView(empty);
+            return;
+        }
+        
+        for (AgentWorkspaceStore.Profile p : profiles) {
+            LinearLayout card = column(requireContext());
+            card.setPadding(dp(16), dp(16), dp(16), dp(16));
+            card.setBackground(stroke(SURFACE, dp(12), BORDER));
+            
+            TextView name = label(requireContext(), p.name, 14, true);
+            card.addView(name);
+            
+            EditText key = new EditText(requireContext());
+            key.setText(p.key);
+            key.setHint("API Key");
+            key.setHintTextColor(TEXT_SECONDARY);
+            key.setTextColor(TEXT_PRIMARY);
+            key.setTextSize(14);
+            key.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            key.setTransformationMethod(PasswordTransformationMethod.getInstance());
+            LinearLayout.LayoutParams keyParams = new LinearLayout.LayoutParams(-1, -2);
+            keyParams.topMargin = dp(8);
+            card.addView(key, keyParams);
+            
+            TextView status = label(requireContext(), p.lastError.isEmpty() ? (p.models.isEmpty() ? "Not validated" : "Valid: " + p.models.size() + " models") : p.lastError, 11, false);
+            status.setTextColor(p.lastError.isEmpty() ? TEXT_SECONDARY : ERROR);
+            status.setPadding(0, dp(4), 0, dp(8));
+            card.addView(status);
+            
+            LinearLayout actions = row(requireContext());
+            MaterialButton validate = solidButton("Check");
+            MaterialButton delete = ghostButton("🗑");
+            
+            actions.addView(validate, weight(1));
+            LinearLayout.LayoutParams delParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            delParams.leftMargin = dp(8);
+            actions.addView(delete, delParams);
+            card.addView(actions);
+            
+            validate.setOnClickListener(v -> {
+                String val = key.getText().toString().trim();
+                p.key = val;
+                validateAPI(p);
+            });
+            
+            delete.setOnClickListener(v -> {
+                store.removeProfile(p.id);
+                refreshSettings();
+            });
+            
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.topMargin = dp(12);
+            providerList.addView(card, lp);
         }
     }
 
-    private void addProviderCard(AgentWorkspaceStore.Profile p) {
-        LinearLayout card = column(requireContext());
-        card.setPadding(dp(14), dp(14), dp(14), dp(14));
-        card.setBackground(stroke(SURFACE, dp(18), BORDER));
-
-        LinearLayout head = row(requireContext());
-        head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView logo = label(requireContext(), "G", 18, true);
-        logo.setGravity(Gravity.CENTER);
-        logo.setTextColor(Color.WHITE);
-        logo.setBackground(round(MINT, 12));
-        head.addView(logo, new LinearLayout.LayoutParams(dp(40), dp(40)));
-
-        LinearLayout names = column(requireContext());
-        names.setPadding(dp(10), 0, 0, 0);
-        names.addView(label(requireContext(), "Google AI Studio · " + p.name, 15, true));
-        names.addView(label(requireContext(), p.models.isEmpty() ? "Belum divalidasi" : p.models.size() + " model teks siap pakai", 11, false));
-        head.addView(names, weight(1));
-
-        MaterialButton toggle = smallButton(p.enabled && !p.key.isEmpty() ? "ON" : "OFF");
-        toggle.setTextColor(p.enabled && !p.key.isEmpty() ? MINT : MUTED);
-        toggle.setBackground(round(p.enabled && !p.key.isEmpty() ? Color.rgb(20, 60, 45) : SURFACE_2, 14));
-        head.addView(toggle, new LinearLayout.LayoutParams(dp(68), dp(44)));
-        card.addView(head);
-
-        EditText keyField = new EditText(requireContext());
-        keyField.setText(p.key);
-        keyField.setHint("Tempel Gemini API key di sini");
-        keyField.setHintTextColor(MUTED);
-        keyField.setTextColor(TEXT);
-        keyField.setTextSize(13);
-        keyField.setSingleLine(true);
-        keyField.setMinHeight(dp(46));
-        keyField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        keyField.setTransformationMethod(PasswordTransformationMethod.getInstance());
-        keyField.setPadding(dp(12), dp(8), dp(12), dp(8));
-        keyField.setBackground(round(SURFACE_2, 12));
-        LinearLayout.LayoutParams kfp = new LinearLayout.LayoutParams(-1, -2);
-        kfp.setMargins(0, dp(10), 0, 0);
-        card.addView(keyField, kfp);
-
-        TextView info = label(requireContext(), p.lastError.isEmpty() ? (p.rate.isEmpty() ? "Check API key untuk validasi & auto-detect model." : "Valid · " + p.rate) : p.lastError, 11, false);
-        info.setTextColor(p.lastError.isEmpty() ? MUTED : RED);
-        info.setPadding(0, dp(6), 0, dp(6));
-        card.addView(info);
-
-        LinearLayout buttons = row(requireContext());
-        MaterialButton check = smallButton("Check API");
-        MaterialButton save = smallButton("Save & Aktifkan");
-        MaterialButton delete = smallButton("Hapus");
-        delete.setTextColor(RED);
-
-        buttons.addView(check, weight(1));
-        buttons.addView(save, weight(1));
-        buttons.addView(delete, new LinearLayout.LayoutParams(dp(64), dp(44)));
-        card.addView(buttons);
-
-        toggle.setOnClickListener(v -> {
-            p.enabled = !p.enabled;
-            store.saveProfiles(profiles);
-            renderProviders();
-        });
-
-        save.setOnClickListener(v -> {
-            String value = keyField.getText().toString().trim();
-            if (!value.isEmpty()) p.key = value;
-            p.enabled = !p.key.isEmpty();
-            store.saveProfiles(profiles);
-            renderProviders();
-            if (p.enabled) welcomeIfNeeded();
-        });
-
-        check.setOnClickListener(v -> validateProfile(p, keyField, info));
-
-        delete.setOnClickListener(v -> {
-            store.removeProfile(p.id);
-            renderProviders();
-        });
-
-        providerList.addView(card, new LinearLayout.LayoutParams(-1, -2) {{
-            setMargins(0, dp(10), 0, 0);
-        }});
-    }
-
-    private void validateProfile(AgentWorkspaceStore.Profile p, EditText key, TextView info) {
-        String candidate = key.getText().toString().trim();
-        if (candidate.isEmpty()) candidate = p.key;
-        if (candidate.isEmpty()) { info.setText("Masukkan API key dulu."); return; }
-        final String keyValue = candidate;
-        info.setText("Checking key dan model aktif...");
-        client.listModels(keyValue, new GeminiAutoClient.Listener() {
+    private void validateAPI(AgentWorkspaceStore.Profile p) {
+        client.listModels(p.key, new GeminiAutoClient.Listener() {
             @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) {
-                p.key = keyValue;
                 p.models.clear();
                 for (GeminiAutoClient.ModelInfo m : models) if (m.text()) p.models.add(m.id());
-                p.rate = remaining;
-                p.lastError = p.models.isEmpty() ? "Key valid, tapi model teks tidak ditemukan." : "API key valid · " + p.models.size() + " model aktif";
+                p.enabled = !p.models.isEmpty();
+                p.lastError = "";
                 store.saveProfiles(profiles);
                 main.post(() -> {
-                    info.setText(p.lastError);
-                    renderProviders();
+                    refreshSettings();
+                    addAssistant("API Key " + p.name + " berhasil divalidasi! ✅");
                 });
             }
-            @Override public void onDelta(String text) { }
-            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) { }
+            @Override public void onDelta(String text) {}
+            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) {}
             @Override public void onError(int status, String message, String remaining, String retry) {
                 p.lastError = message;
+                p.enabled = false;
                 store.saveProfiles(profiles);
-                main.post(() -> info.setText(message));
+                main.post(() -> {
+                    refreshSettings();
+                    addAssistant("Gagal validasi " + p.name + ": " + message);
+                });
             }
         });
     }
 
-    private void welcomeIfNeeded() {
-        session = store.getSession(session.id);
-        boolean hasAssistant = false;
-        for (AgentWorkspaceStore.Message m : session.messages) if ("assistant".equals(m.role)) hasAssistant = true;
-        if (!hasAssistant) {
-            store.append(session.id, "assistant", GREETING);
-            session = store.getSession(session.id);
-            restoreSession();
-        }
-        status("API aktif · Gemini", MINT);
-    }
-
-    private void bubble(String text, boolean user) {
-        LinearLayout line = row(requireContext());
-        line.setGravity(user ? Gravity.END : Gravity.START | Gravity.CENTER_VERTICAL);
-        if (!user) line.addView(avatar(), new LinearLayout.LayoutParams(dp(32), dp(32)));
-        LinearLayout col = column(requireContext());
-        col.setGravity(user ? Gravity.END : Gravity.START);
-         TextView bubble = label(requireContext(), user ? text : richText(text), 15, false);
-        bubble.setTextColor(Color.WHITE);
-        bubble.setTextIsSelectable(true);
-         bubble.setMaxWidth(Math.round(requireContext().getResources().getDisplayMetrics().widthPixels * (user ? .78f : .86f)));
-         bubble.setPadding(dp(14), dp(11), dp(14), dp(11));
-         bubble.setBackground(round(user ? MINT_DARK : SURFACE, 18));
-        col.addView(bubble);
-        TextView time = label(requireContext(), new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 10, false);
-        time.setTextColor(MUTED);
-        col.addView(time);
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2);
-        p.setMargins(user ? dp(48) : dp(8), dp(4), user ? 0 : dp(48), dp(4));
-        line.addView(col, p);
-        messages.addView(line, new LinearLayout.LayoutParams(-1, -2));
-        line.setAlpha(0f); line.setTranslationY(dp(8));
-        line.animate().alpha(1f).translationY(0).setDuration(150).start();
-    }
-
-    private TextView addAssistantBubble(String text) {
-        LinearLayout line = row(requireContext());
-        line.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        line.addView(avatar(), new LinearLayout.LayoutParams(dp(32), dp(32)));
-        LinearLayout col = column(requireContext());
-        col.setGravity(Gravity.START);
-         TextView bubble = label(requireContext(), richText(text), 15, false);
-        bubble.setTextColor(TEXT);
-        bubble.setTextIsSelectable(true);
-         bubble.setMaxWidth(Math.round(requireContext().getResources().getDisplayMetrics().widthPixels * .86f));
-         bubble.setPadding(dp(14), dp(11), dp(14), dp(11));
-         bubble.setBackground(round(SURFACE, 18));
-        col.addView(bubble);
-        TextView time = label(requireContext(), new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 10, false);
-        time.setTextColor(MUTED);
-        col.addView(time);
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2);
-        p.setMargins(dp(8), dp(4), dp(48), dp(4));
-        line.addView(col, p);
-        messages.addView(line, new LinearLayout.LayoutParams(-1, -2));
-        line.setAlpha(0f); line.setTranslationY(dp(8));
-        line.animate().alpha(1f).translationY(0).setDuration(150).start();
-        return bubble;
-    }
-
-    private TextView avatar() {
-        TextView a = label(requireContext(), "✦", 16, true);
-        a.setGravity(Gravity.CENTER);
-        a.setTextColor(MINT);
-        a.setBackground(stroke(SURFACE_2, dp(18), Color.rgb(0, 130, 100)));
-        a.setContentDescription("Dayven AI");
-        return a;
-    }
-
-    private void addAssistant(String text) { bubble(text, false); }
-
-    /**
-     * Keeps markdown readable without pulling a full markdown dependency into the editor.
-     * Fenced code is deliberately rendered as a quiet monospace block so long answers do not
-     * become a wall of punctuation in the chat transcript.
-     */
-    private CharSequence richText(String value) {
-        if (value == null || value.isEmpty()) return "";
-        SpannableStringBuilder out = new SpannableStringBuilder();
-        String[] lines = value.replace("\r", "").split("\n", -1);
-        boolean code = false;
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
-            String trimmed = line.trim();
-            if (trimmed.startsWith("```")) {
-                code = !code;
-                if (code && out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append('\n');
-                continue;
-            }
-            int start = out.length();
-            out.append(line);
-            int end = out.length();
-            if (code) {
-                out.setSpan(new TypefaceSpan("monospace"), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                out.setSpan(new BackgroundColorSpan(CODE_BG), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                out.setSpan(new ForegroundColorSpan(Color.rgb(190, 239, 215)), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            } else if (trimmed.startsWith("#") || trimmed.startsWith("TARGET:") || trimmed.startsWith("FILE:")) {
-                out.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                out.setSpan(new ForegroundColorSpan(MINT), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            if (i < lines.length - 1) out.append('\n');
-        }
-        return out;
-    }
-
-    private void scrollBottom() {
-        if (transcript != null) {
-            transcript.post(() -> {
-                View child = transcript.getChildAt(0);
-                if (child != null) transcript.smoothScrollTo(0, child.getBottom());
-            });
-        }
-    }
-
-    private void status(String text, int color) {
-        if (statusText != null) {
-            statusText.setText(text);
-            statusText.setTextColor(color);
-        }
-    }
-
-    private void finishError(String text) {
-        busy = false;
-        removeThinking();
-        status(text, RED);
-        addAssistant(text);
-    }
-
-    private String preview(String value) { return value.length() > 1600 ? value.substring(0, 1600) + "…" : value; }
-    private LinearLayout column(Context c) { LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.VERTICAL); return l; }
-    private LinearLayout row(Context c) { LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
-    private LinearLayout.LayoutParams weight(float w) { return new LinearLayout.LayoutParams(0, -2, w); }
-    private FrameLayout.LayoutParams frame(int width, int height, int gravity) { return new FrameLayout.LayoutParams(width, height, gravity); }
-    private TextView label(Context c, CharSequence text, int size, boolean bold) { TextView v = new TextView(c); v.setText(text); v.setTextSize(size); v.setTextColor(TEXT); v.setTypeface(null, bold ? Typeface.BOLD : Typeface.NORMAL); return v; }
-    private MaterialButton icon(Context c, String text, String description) { MaterialButton b = new MaterialButton(c); b.setText(text); b.setContentDescription(description); b.setTextSize(18); b.setTextColor(TEXT); b.setMinHeight(dp(48)); b.setMinWidth(dp(48)); b.setPadding(0, 0, 0, 0); b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)); return b; }
-    private MaterialButton smallButton(String text) { MaterialButton b = new MaterialButton(requireContext()); b.setText(text); b.setTextSize(12); b.setTextColor(TEXT); b.setMinHeight(dp(44)); b.setMinWidth(dp(44)); b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(SURFACE_2)); return b; }
-    private GradientDrawable round(int color, int radius) { GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
-    private GradientDrawable stroke(int fill, int radius, int color) { GradientDrawable d = round(fill, radius); d.setStroke(dp(1), color); return d; }
-    private int dp(int value) { return Math.round(value * requireContext().getResources().getDisplayMetrics().density); }
-
     private void startHeartbeat() {
-        stopHeartbeat();
         heartbeat = () -> {
             profiles = store.getProfiles();
-            boolean connected = profiles.stream().anyMatch(p -> p.enabled && !p.key.isEmpty());
-            status(connected ? "API aktif · Gemini" : "Offline · add an API profile", connected ? MINT : MUTED);
-            main.postDelayed(heartbeat, 30000);
+            boolean active = profiles.stream().anyMatch(p -> p.enabled && !p.key.isEmpty());
+            if (statusText != null) {
+                statusText.setText(active ? "Connected" : "Disconnected");
+                statusText.setTextColor(active ? SUCCESS : ERROR);
+            }
+            main.postDelayed(heartbeat, 10000);
         };
         main.post(heartbeat);
     }
 
     private void stopHeartbeat() {
         if (heartbeat != null) main.removeCallbacks(heartbeat);
-        heartbeat = null;
+    }
+
+    private void finishError(String message) {
+        busy = false;
+        removeThinking();
+        addAssistant(message);
+    }
+
+    private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+    private LinearLayout column(Context c) { LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.VERTICAL); return l; }
+    private LinearLayout row(Context c) { LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
+    private LinearLayout.LayoutParams weight(float w) { return new LinearLayout.LayoutParams(0, -2, w); }
+    private FrameLayout.LayoutParams frame(int w, int h, int g) { return new FrameLayout.LayoutParams(w, h, g); }
+    private TextView label(Context c, CharSequence t, int s, boolean b) { TextView v = new TextView(c); v.setText(t); v.setTextSize(s); v.setTypeface(null, b ? Typeface.BOLD : Typeface.NORMAL); return v; }
+    private MaterialButton icon(Context c, String t, String d) { MaterialButton b = new MaterialButton(c); b.setText(t); b.setContentDescription(d); b.setBackgroundColor(Color.TRANSPARENT); b.setTextColor(TEXT_PRIMARY); return b; }
+    
+    private MaterialButton solidButton(String t) { 
+        MaterialButton b = new MaterialButton(requireContext()); 
+        b.setText(t); 
+        b.setBackgroundTintList(ColorStateList.valueOf(ACCENT));
+        b.setTextColor(Color.WHITE); 
+        return b; 
+    }
+    
+    private MaterialButton ghostButton(String t) { 
+        MaterialButton b = new MaterialButton(requireContext()); 
+        b.setText(t); 
+        b.setBackgroundTintList(ColorStateList.valueOf(Color.TRANSPARENT));
+        b.setStrokeColor(ColorStateList.valueOf(BORDER));
+        b.setStrokeWidth(dp(1));
+        b.setTextColor(TEXT_PRIMARY); 
+        return b; 
+    }
+    
+    private GradientDrawable round(int c, int r) { GradientDrawable d = new GradientDrawable(); d.setColor(c); d.setCornerRadius(dp(r)); return d; }
+    private GradientDrawable stroke(int f, int r, int c) { GradientDrawable d = round(f, r); d.setStroke(dp(1), c); return d; }
+    private void scrollBottom() { transcript.post(() -> transcript.fullScroll(View.FOCUS_DOWN)); }
+    
+    private CharSequence richText(String value) {
+        if (value == null) return "";
+        SpannableStringBuilder ssb = new SpannableStringBuilder(value);
+        int start = value.indexOf("```");
+        while (start != -1) {
+            int end = value.indexOf("```", start + 3);
+            if (end == -1) break;
+            ssb.setSpan(new TypefaceSpan("monospace"), start, end + 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new BackgroundColorSpan(CODE_BG), start, end + 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new ForegroundColorSpan(Color.WHITE), start, end + 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            start = value.indexOf("```", end + 3);
+        }
+        return ssb;
     }
 
     private static final class Route {
         final AgentWorkspaceStore.Profile profile;
         final String model;
-        Route(AgentWorkspaceStore.Profile profile, String model) {
-            this.profile = profile;
-            this.model = model;
-        }
+        Route(AgentWorkspaceStore.Profile p, String m) { this.profile = p; this.model = m; }
     }
 }
