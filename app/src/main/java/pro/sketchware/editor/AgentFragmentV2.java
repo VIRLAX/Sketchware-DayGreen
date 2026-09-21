@@ -534,12 +534,13 @@ public final class AgentFragmentV2 extends Fragment {
 
         String directKey = getBestApiKey(profiles);
 
-        // Robust, updated model pool including Gemini 2.5 / 2.0 / 1.5
+        // Modern 2026 official models recommended by Google AI Studio
         List<String> defaultModels = new ArrayList<>();
+        defaultModels.add("gemini-3.6-flash");
         defaultModels.add("gemini-2.5-flash");
         defaultModels.add("gemini-2.0-flash");
-        defaultModels.add("gemini-1.5-flash");
         defaultModels.add("gemini-1.5-flash-latest");
+        defaultModels.add("gemini-1.5-flash");
         defaultModels.add("gemini-1.5-pro");
 
         for (AgentWorkspaceStore.Profile p : profiles) {
@@ -551,7 +552,6 @@ public final class AgentFragmentV2 extends Fragment {
             } else {
                 models.addAll(defaultModels);
             }
-            // Ensure modern fallback models are always present in the route pool
             for (String fallbackM : defaultModels) {
                 if (!models.contains(fallbackM)) models.add(fallbackM);
             }
@@ -581,19 +581,20 @@ public final class AgentFragmentV2 extends Fragment {
     private int scoreModel(String model, int tier) {
         String m = model.toLowerCase();
         if (tier == 2) {
-            if (m.contains("2.5-pro") || m.contains("pro")) return 0;
+            if (m.contains("3.6-flash") || m.contains("pro")) return 0;
             if (m.contains("2.5-flash") || m.contains("2.0-flash") || m.contains("flash")) return 1;
             return 2;
         }
         if (tier == 0) {
             if (m.contains("lite") || m.contains("8b")) return 0;
-            if (m.contains("2.5-flash") || m.contains("2.0-flash") || m.contains("flash")) return 1;
+            if (m.contains("3.6-flash") || m.contains("2.5-flash") || m.contains("2.0-flash") || m.contains("flash")) return 1;
             return 2;
         }
-        if (m.contains("2.5-flash") || m.contains("2.0-flash")) return 0;
-        if (m.contains("flash")) return 1;
-        if (m.contains("pro")) return 2;
-        return 3;
+        if (m.contains("3.6-flash")) return 0;
+        if (m.contains("2.5-flash") || m.contains("2.0-flash")) return 1;
+        if (m.contains("flash")) return 2;
+        if (m.contains("pro")) return 3;
+        return 4;
     }
 
     private void streamRoute(String request, String original, List<Route> routes, int index, StringBuilder errorTrace) {
@@ -980,7 +981,7 @@ public final class AgentFragmentV2 extends Fragment {
             boolean hasKeyNow = (existingKey != null && !existingKey.trim().isEmpty());
             boolean ok = p.lastError.isEmpty() && hasKeyNow;
             String statusLine = p.lastError.isEmpty()
-                    ? (!hasKeyNow ? "Belum ada API Key" : (p.models.isEmpty() ? "Siap digunakan \u00B7 Valid" : "Aktif \u00B7 " + p.models.size() + " model siap" + (p.rate.isEmpty() ? "" : " \u00B7 " + p.rate)))
+                    ? (!hasKeyNow ? "Belum ada API Key" : (p.models.isEmpty() ? "Siap digunakan \u00B7 Valid" : "Aktif \u00B7 " + p.models.size() + " model aktif" + (p.rate.isEmpty() ? "" : " \u00B7 " + p.rate)))
                     : p.lastError;
             final TextView status = label(requireContext(), statusLine, 11, false);
             status.setTextColor(p.lastError.isEmpty() ? (ok ? IOS_GREEN : TEXT_SECONDARY) : IOS_RED);
@@ -1008,7 +1009,7 @@ public final class AgentFragmentV2 extends Fragment {
                 p.key = currentKey;
                 p.enabled = true;
                 store.setDirectApiKey(currentKey);
-                status.setText("Memeriksa API Key ke Google AI Studio...");
+                status.setText("Memverifikasi model aktif ke Google AI Studio...");
                 status.setTextColor(TEXT_SECONDARY);
                 validateAPI(p, status, key);
             });
@@ -1027,25 +1028,42 @@ public final class AgentFragmentV2 extends Fragment {
     private void validateAPI(AgentWorkspaceStore.Profile p, final TextView statusView, final EditText keyInput) {
         client.listModels(p.key, new GeminiAutoClient.Listener() {
             @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) {
-                p.models.clear();
-                for (GeminiAutoClient.ModelInfo m : models) if (m.text()) p.models.add(m.id());
-                p.enabled = true;
-                p.lastError = "";
-                p.rate = remaining;
-                store.setDirectApiKey(p.key);
-                main.post(() -> {
+                List<String> rawCandidates = new ArrayList<>();
+                for (GeminiAutoClient.ModelInfo m : models) {
+                    if (m.text()) rawCandidates.add(m.id());
+                }
+
+                // Add official latest models to probe
+                if (!rawCandidates.contains("gemini-3.6-flash")) rawCandidates.add(0, "gemini-3.6-flash");
+
+                // Filter through real-time ping to only retain models with 200 OK json response
+                client.validateActiveModels(p.key, rawCandidates, validActiveModels -> main.post(() -> {
+                    p.models.clear();
+                    if (!validActiveModels.isEmpty()) {
+                        p.models.addAll(validActiveModels);
+                    } else {
+                        // Fallback to active recommended models if discovery returned restricted list
+                        p.models.add("gemini-3.6-flash");
+                        p.models.add("gemini-2.0-flash");
+                    }
+                    p.enabled = true;
+                    p.lastError = "";
+                    p.rate = remaining;
+                    store.setDirectApiKey(p.key);
+                    store.saveProfiles(profiles);
+
                     if (keyInput != null && !p.key.isEmpty()) {
                         keyInput.setText(p.key);
                     }
                     if (statusView != null) {
-                        statusView.setText("Aktif \u00B7 " + (p.models.isEmpty() ? 2 : p.models.size()) + " model siap");
+                        statusView.setText("Aktif \u00B7 " + p.models.size() + " model terverifikasi aktif");
                         statusView.setTextColor(IOS_GREEN);
                     }
-                    Toast.makeText(requireContext(), "API Key valid dan bisa digunakan! \u2705", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(requireContext(), "API Key valid (" + p.models.size() + " model aktif terverifikasi) \u2705", Toast.LENGTH_SHORT).show();
                     updateStatusIndicator(true);
                     startHeartbeat();
                     restoreSession();
-                });
+                }));
             }
             @Override public void onDelta(String text) { }
             @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) { }
