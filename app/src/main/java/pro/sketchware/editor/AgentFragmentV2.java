@@ -418,7 +418,7 @@ public final class AgentFragmentV2 extends Fragment {
         }
         if (store != null) {
             String fallback = store.getFallbackApiKey();
-            return !fallback.isEmpty();
+            return fallback != null && !fallback.trim().isEmpty();
         }
         return false;
     }
@@ -450,7 +450,7 @@ public final class AgentFragmentV2 extends Fragment {
         addThinking();
 
         String request = AgentPromptOptimizer.build(prompt, AgentProjectContext.build(requireContext(), projectId, selectedFile));
-        runDiscoveryThenRoute(request, prompt, 0);
+        runRoutes(request, prompt);
     }
 
     private void addThinking() {
@@ -500,39 +500,6 @@ public final class AgentFragmentV2 extends Fragment {
                 .withEndAction(() -> messages.removeView(v)).start();
     }
 
-    private void runDiscoveryThenRoute(String request, String original, int index) {
-        profiles = store.getProfiles();
-        if (index >= profiles.size()) {
-            runRoutes(request, original);
-            return;
-        }
-
-        AgentWorkspaceStore.Profile p = profiles.get(index);
-        if (p.key == null || p.key.trim().isEmpty() || !p.models.isEmpty()) {
-            runDiscoveryThenRoute(request, original, index + 1);
-            return;
-        }
-
-        client.listModels(p.key, new GeminiAutoClient.Listener() {
-            @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) {
-                p.models.clear();
-                for (GeminiAutoClient.ModelInfo m : models) if (m.text()) p.models.add(m.id());
-                p.enabled = true;
-                p.rate = remaining;
-                store.saveProfiles(profiles);
-                main.post(() -> runDiscoveryThenRoute(request, original, index + 1));
-            }
-            @Override public void onDelta(String text) { }
-            @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) { }
-            @Override public void onError(int status, String message, String remaining, String retry) {
-                p.lastError = message;
-                p.enabled = true;
-                store.saveProfiles(profiles);
-                main.post(() -> runDiscoveryThenRoute(request, original, index + 1));
-            }
-        });
-    }
-
     private void runRoutes(String request, String original) {
         List<Route> routes = routesFor(original);
         if (routes.isEmpty()) {
@@ -564,10 +531,10 @@ public final class AgentFragmentV2 extends Fragment {
 
         if (out.isEmpty() && store != null) {
             String fallback = store.getFallbackApiKey();
-            if (!fallback.isEmpty()) {
+            if (fallback != null && !fallback.trim().isEmpty()) {
                 AgentWorkspaceStore.Profile fallbackProf = new AgentWorkspaceStore.Profile();
                 fallbackProf.name = "Gemini";
-                fallbackProf.key = fallback;
+                fallbackProf.key = fallback.trim();
                 out.add(new Route(fallbackProf, "gemini-1.5-flash"));
                 out.add(new Route(fallbackProf, "gemini-1.5-pro"));
             }
@@ -600,7 +567,8 @@ public final class AgentFragmentV2 extends Fragment {
         }
 
         Route route = routes.get(index);
-        if (!triedRoutes.add(route.profile.id + ":" + route.model)) {
+        String routeKey = (route.profile.id != null ? route.profile.id : "prof") + ":" + route.model;
+        if (!triedRoutes.add(routeKey)) {
             streamRoute(request, original, routes, index + 1);
             return;
         }
@@ -979,9 +947,9 @@ public final class AgentFragmentV2 extends Fragment {
                 @Override public void afterTextChanged(Editable s) { }
             });
 
-            boolean ok = p.lastError.isEmpty() && !p.models.isEmpty();
+            boolean ok = p.lastError.isEmpty() && (!p.models.isEmpty() || !p.key.isEmpty());
             String statusLine = p.lastError.isEmpty()
-                    ? (p.models.isEmpty() ? "Belum divalidasi" : "Aktif \u00B7 " + p.models.size() + " model siap" + (p.rate.isEmpty() ? "" : " \u00B7 " + p.rate))
+                    ? (p.key.isEmpty() ? "Belum ada API Key" : (p.models.isEmpty() ? "Siap digunakan \u00B7 Valid" : "Aktif \u00B7 " + p.models.size() + " model siap" + (p.rate.isEmpty() ? "" : " \u00B7 " + p.rate)))
                     : p.lastError;
             final TextView status = label(requireContext(), statusLine, 11, false);
             status.setTextColor(p.lastError.isEmpty() ? (ok ? IOS_GREEN : TEXT_SECONDARY) : IOS_RED);
@@ -1195,22 +1163,16 @@ public final class AgentFragmentV2 extends Fragment {
     private CharSequence richText(String value) {
         if (value == null) return "";
 
-        // Strip markdown bold and italic markers cleanly:
-        // **bold** -> bold styled with StyleSpan(BOLD)
-        // *italic* or _italic_ -> italic styled with StyleSpan(ITALIC)
-        // ```code``` -> monospace formatted
         SpannableStringBuilder ssb = new SpannableStringBuilder();
         int len = value.length();
         int i = 0;
 
         while (i < len) {
-            // Check for code blocks
             if (value.startsWith("```", i)) {
                 int end = value.indexOf("```", i + 3);
                 if (end != -1) {
                     int blockStart = ssb.length();
                     String codeContent = value.substring(i + 3, end);
-                    // Drop initial language tag line if present
                     int firstLine = codeContent.indexOf('\n');
                     if (firstLine != -1 && firstLine < 20) {
                         codeContent = codeContent.substring(firstLine + 1);
@@ -1225,7 +1187,6 @@ public final class AgentFragmentV2 extends Fragment {
                 }
             }
 
-            // Check for bold **text**
             if (value.startsWith("**", i)) {
                 int end = value.indexOf("**", i + 2);
                 if (end != -1) {
@@ -1237,7 +1198,6 @@ public final class AgentFragmentV2 extends Fragment {
                 }
             }
 
-            // Check for single *italic*
             if (value.charAt(i) == '*' && i + 1 < len && value.charAt(i + 1) != ' ') {
                 int end = value.indexOf('*', i + 1);
                 if (end != -1 && end > i + 1) {
@@ -1249,7 +1209,6 @@ public final class AgentFragmentV2 extends Fragment {
                 }
             }
 
-            // Normal character
             ssb.append(value.charAt(i));
             i++;
         }
