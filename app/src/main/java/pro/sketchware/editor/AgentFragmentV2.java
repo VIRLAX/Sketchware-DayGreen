@@ -64,7 +64,7 @@ import pro.sketchware.activities.editor.view.ViewCodeEditorActivity;
  * Layout contract:
  * - Header parked below control center / system status bar.
  * - Composer adjusts cleanly above keyboard without getting obscured.
- * - Multi-API management with persistent profiles and auto-routing.
+ * - Multi-API management with persistent profiles, dynamic model routing, and accurate real-time feedback.
  */
 public final class AgentFragmentV2 extends Fragment {
     // iOS dark system palette
@@ -168,7 +168,6 @@ public final class AgentFragmentV2 extends Fragment {
         super.onDestroyView();
     }
 
-    /** Called by the host when the Agent tab becomes visible. */
     public void onAgentTabOpened(boolean opened) {
         if (!opened) return;
         expanded = true;
@@ -206,7 +205,6 @@ public final class AgentFragmentV2 extends Fragment {
 
         root.addView(shell);
 
-        // Hybrid WindowInsets + OnGlobalLayoutListener for rock-solid keyboard handling
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
@@ -219,14 +217,13 @@ public final class AgentFragmentV2 extends Fragment {
         });
         ViewCompat.requestApplyInsets(root);
 
-        // Fallback detector using visible display frame to guarantee lifting above keyboard on any device/ROM
         keyboardLayoutListener = () -> {
             if (root == null || composerRow == null) return;
             Rect r = new Rect();
             root.getWindowVisibleDisplayFrame(r);
             int screenHeight = root.getRootView().getHeight();
             int keypadHeight = screenHeight - r.bottom;
-            if (keypadHeight > screenHeight * 0.15) { // Keyboard is open
+            if (keypadHeight > screenHeight * 0.15) {
                 composerRow.setPadding(dp(12), dp(8), dp(12), keypadHeight + dp(10));
                 scrollBottom();
             } else {
@@ -240,7 +237,6 @@ public final class AgentFragmentV2 extends Fragment {
         return root;
     }
 
-    /** Keeps the header bar parked right below the control center, never under it. */
     private void applyTopInset() {
         if (header == null) return;
         int top = expanded ? insetTop : 0;
@@ -525,7 +521,7 @@ public final class AgentFragmentV2 extends Fragment {
             finishError("Tidak ada model AI yang valid. Silakan periksa API Key di Settings.");
             return;
         }
-        streamRoute(request, original, routes, 0);
+        streamRoute(request, original, routes, 0, new StringBuilder());
     }
 
     private List<Route> routesFor(String prompt) {
@@ -538,13 +534,26 @@ public final class AgentFragmentV2 extends Fragment {
 
         String directKey = getBestApiKey(profiles);
 
+        // Robust, updated model pool including Gemini 2.5 / 2.0 / 1.5
+        List<String> defaultModels = new ArrayList<>();
+        defaultModels.add("gemini-2.5-flash");
+        defaultModels.add("gemini-2.0-flash");
+        defaultModels.add("gemini-1.5-flash");
+        defaultModels.add("gemini-1.5-flash-latest");
+        defaultModels.add("gemini-1.5-pro");
+
         for (AgentWorkspaceStore.Profile p : profiles) {
             String useKey = (p.key != null && !p.key.trim().isEmpty()) ? p.key.trim() : directKey;
             if (useKey.isEmpty()) continue;
-            List<String> models = new ArrayList<>(p.models);
-            if (models.isEmpty()) {
-                models.add("gemini-1.5-flash");
-                models.add("gemini-1.5-pro");
+            List<String> models = new ArrayList<>();
+            if (p.models != null && !p.models.isEmpty()) {
+                models.addAll(p.models);
+            } else {
+                models.addAll(defaultModels);
+            }
+            // Ensure modern fallback models are always present in the route pool
+            for (String fallbackM : defaultModels) {
+                if (!models.contains(fallbackM)) models.add(fallbackM);
             }
             final int t = tier;
             models.sort((a, b) -> Integer.compare(scoreModel(a, t), scoreModel(b, t)));
@@ -561,8 +570,9 @@ public final class AgentFragmentV2 extends Fragment {
             AgentWorkspaceStore.Profile fallbackProf = new AgentWorkspaceStore.Profile();
             fallbackProf.name = "Gemini";
             fallbackProf.key = directKey;
-            out.add(new Route(fallbackProf, "gemini-1.5-flash"));
-            out.add(new Route(fallbackProf, "gemini-1.5-pro"));
+            for (String m : defaultModels) {
+                out.add(new Route(fallbackProf, m));
+            }
         }
 
         return out;
@@ -571,30 +581,32 @@ public final class AgentFragmentV2 extends Fragment {
     private int scoreModel(String model, int tier) {
         String m = model.toLowerCase();
         if (tier == 2) {
-            if (m.contains("pro")) return 0;
-            if (m.contains("flash")) return 1;
+            if (m.contains("2.5-pro") || m.contains("pro")) return 0;
+            if (m.contains("2.5-flash") || m.contains("2.0-flash") || m.contains("flash")) return 1;
             return 2;
         }
         if (tier == 0) {
             if (m.contains("lite") || m.contains("8b")) return 0;
-            if (m.contains("flash")) return 1;
+            if (m.contains("2.5-flash") || m.contains("2.0-flash") || m.contains("flash")) return 1;
             return 2;
         }
-        if (m.contains("flash")) return 0;
-        if (m.contains("pro")) return 1;
-        return 2;
+        if (m.contains("2.5-flash") || m.contains("2.0-flash")) return 0;
+        if (m.contains("flash")) return 1;
+        if (m.contains("pro")) return 2;
+        return 3;
     }
 
-    private void streamRoute(String request, String original, List<Route> routes, int index) {
+    private void streamRoute(String request, String original, List<Route> routes, int index, StringBuilder errorTrace) {
         if (index >= routes.size()) {
-            finishError("Limit tercapai di semua API Key. Tambahkan API Key cadangan di Settings.");
+            String detail = errorTrace.length() > 0 ? "\n\nDetail: " + errorTrace.toString() : "";
+            finishError("Gagal menghubungi server Gemini setelah mencoba seluruh model & API Key." + detail);
             return;
         }
 
         Route route = routes.get(index);
         String routeKey = (route.profile.id != null ? route.profile.id : "prof") + ":" + route.model;
         if (!triedRoutes.add(routeKey)) {
-            streamRoute(request, original, routes, index + 1);
+            streamRoute(request, original, routes, index + 1, errorTrace);
             return;
         }
 
@@ -629,7 +641,10 @@ public final class AgentFragmentV2 extends Fragment {
                         busy = false;
                         return;
                     }
-                    streamRoute(request, original, routes, index + 1);
+                    if (errorTrace.length() == 0) {
+                        errorTrace.append("[").append(route.model).append(": ").append(message).append("]");
+                    }
+                    streamRoute(request, original, routes, index + 1, errorTrace);
                 });
             }
         });

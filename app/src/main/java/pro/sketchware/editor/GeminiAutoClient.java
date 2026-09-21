@@ -20,7 +20,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import okio.BufferedSource;
 
-/** Gemini REST client with model discovery, SSE streaming, usage telemetry, and fallback signals. */
+/** Gemini REST client with dynamic model discovery, SSE streaming, usage telemetry, and fallback signals. */
 public final class GeminiAutoClient {
     private static final String ROOT = "https://generativelanguage.googleapis.com/v1beta/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
@@ -118,7 +118,6 @@ public final class GeminiAutoClient {
 
     public void stream(String apiKey, String model, String prompt, Listener listener) {
         JSONObject payload = new JSONObject();
-        // Dynamic output token optimization
         int outputTokens = prompt != null && prompt.length() > 6000 ? 4096 : 2048;
         try {
             payload.put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray().put(new JSONObject().put("text", prompt)))));
@@ -152,6 +151,7 @@ public final class GeminiAutoClient {
                 }
 
                 Usage[] usage = {new Usage(0, 0, 0)};
+                boolean hasEmitted = false;
                 try (Response ignored = response) {
                     BufferedSource source = ignored.body().source();
                     while (!source.exhausted()) {
@@ -168,7 +168,10 @@ public final class GeminiAutoClient {
                             if (parts != null) {
                                 for (int i = 0; i < parts.length(); i++) {
                                     String delta = parts.optJSONObject(i) == null ? "" : parts.optJSONObject(i).optString("text", "");
-                                    if (!delta.isEmpty()) listener.onDelta(delta);
+                                    if (!delta.isEmpty()) {
+                                        hasEmitted = true;
+                                        listener.onDelta(delta);
+                                    }
                                 }
                             }
                         }
@@ -177,7 +180,12 @@ public final class GeminiAutoClient {
                             usage[0] = new Usage(u.optInt("promptTokenCount"), u.optInt("candidatesTokenCount"), u.optInt("totalTokenCount"));
                         }
                     }
-                    listener.onComplete(model, usage[0], remaining, retry);
+                    if (!hasEmitted) {
+                        // Empty stream or no candidate generated
+                        listener.onError(204, "Tidak ada respon teks dari model " + model, remaining, retry);
+                    } else {
+                        listener.onComplete(model, usage[0], remaining, retry);
+                    }
                 } catch (Exception e) {
                     listener.onError(0, message(e), remaining, retry);
                 }
@@ -203,11 +211,30 @@ public final class GeminiAutoClient {
         return e.getMessage() == null || e.getMessage().isEmpty() ? "Network request failed." : e.getMessage();
     }
 
-    private static String error(String body, int status) {
+    public static String error(String body, int status) {
         try {
-            JSONObject e = new JSONObject(body).optJSONObject("error");
-            if (e != null && !e.optString("message").isEmpty()) return e.optString("message");
+            JSONObject root = new JSONObject(body);
+            JSONObject e = root.optJSONObject("error");
+            if (e != null) {
+                String msg = e.optString("message", "");
+                String stat = e.optString("status", "");
+                if (!msg.isEmpty()) {
+                    if (status == 429 || "RESOURCE_EXHAUSTED".equalsIgnoreCase(stat)) {
+                        return "Quota/Rate Limit Google AI Studio tercapai: " + msg;
+                    }
+                    if (status == 400 || "INVALID_ARGUMENT".equalsIgnoreCase(stat)) {
+                        return "Parameter atau model tidak valid (HTTP 400): " + msg;
+                    }
+                    if (status == 403 || "PERMISSION_DENIED".equalsIgnoreCase(stat)) {
+                        return "Akses API ditolak (HTTP 403): " + msg;
+                    }
+                    if (status == 404 || "NOT_FOUND".equalsIgnoreCase(stat)) {
+                        return "Model tidak ditemukan (HTTP 404): " + msg;
+                    }
+                    return msg + " (HTTP " + status + ")";
+                }
+            }
         } catch (Exception ignored) { }
-        return "Gemini request failed (HTTP " + status + ").";
+        return "Gemini API error (HTTP " + status + ").";
     }
 }
