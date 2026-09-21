@@ -407,7 +407,7 @@ public final class AgentFragmentV2 extends Fragment {
     private boolean hasActiveKey(List<AgentWorkspaceStore.Profile> list) {
         if (list == null) return false;
         for (AgentWorkspaceStore.Profile p : list) {
-            if (p.enabled && p.key != null && !p.key.trim().isEmpty()) {
+            if (p != null && p.key != null && !p.key.trim().isEmpty()) {
                 return true;
             }
         }
@@ -499,7 +499,7 @@ public final class AgentFragmentV2 extends Fragment {
         }
 
         AgentWorkspaceStore.Profile p = profiles.get(index);
-        if (!p.enabled || p.key == null || p.key.trim().isEmpty() || !p.models.isEmpty()) {
+        if (p.key == null || p.key.trim().isEmpty() || !p.models.isEmpty()) {
             runDiscoveryThenRoute(request, original, index + 1);
             return;
         }
@@ -508,6 +508,7 @@ public final class AgentFragmentV2 extends Fragment {
             @Override public void onModels(List<GeminiAutoClient.ModelInfo> models, String remaining, String retry) {
                 p.models.clear();
                 for (GeminiAutoClient.ModelInfo m : models) if (m.text()) p.models.add(m.id());
+                p.enabled = true;
                 p.rate = remaining;
                 store.saveProfiles(profiles);
                 main.post(() -> runDiscoveryThenRoute(request, original, index + 1));
@@ -516,6 +517,7 @@ public final class AgentFragmentV2 extends Fragment {
             @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) { }
             @Override public void onError(int status, String message, String remaining, String retry) {
                 p.lastError = message;
+                p.enabled = true;
                 store.saveProfiles(profiles);
                 main.post(() -> runDiscoveryThenRoute(request, original, index + 1));
             }
@@ -540,7 +542,7 @@ public final class AgentFragmentV2 extends Fragment {
         else if (prompt.length() < 50) tier = 0;
 
         for (AgentWorkspaceStore.Profile p : profiles) {
-            if (!p.enabled || p.key == null || p.key.trim().isEmpty()) continue;
+            if (p.key == null || p.key.trim().isEmpty()) continue;
             List<String> models = new ArrayList<>(p.models);
             if (models.isEmpty()) {
                 models.add("gemini-1.5-flash");
@@ -956,6 +958,7 @@ public final class AgentFragmentV2 extends Fragment {
                 @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                     p.key = s == null ? "" : s.toString().trim();
+                    p.enabled = true;
                     store.saveProfiles(profiles);
                 }
                 @Override public void afterTextChanged(Editable s) { }
@@ -1033,7 +1036,7 @@ public final class AgentFragmentV2 extends Fragment {
             @Override public void onComplete(String model, GeminiAutoClient.Usage usage, String remaining, String retry) { }
             @Override public void onError(int status, String message, String remaining, String retry) {
                 p.lastError = message;
-                p.enabled = false;
+                p.enabled = true;
                 store.saveProfiles(profiles);
                 main.post(() -> {
                     if (keyInput != null && !p.key.isEmpty()) {
