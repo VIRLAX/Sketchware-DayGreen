@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -20,7 +21,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import okio.BufferedSource;
 
-/** Gemini REST client with dynamic model discovery, SSE streaming, usage telemetry, and fallback signals. */
+/** Gemini REST client with dynamic model discovery, health check validation, SSE streaming, usage telemetry, and fallback signals. */
 public final class GeminiAutoClient {
     private static final String ROOT = "https://generativelanguage.googleapis.com/v1beta/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
@@ -31,6 +32,10 @@ public final class GeminiAutoClient {
         void onDelta(String text);
         void onComplete(String model, Usage usage, String remaining, String retryAfter);
         void onError(int status, String message, String remaining, String retryAfter);
+    }
+
+    public interface ValidateModelsCallback {
+        void onValidated(List<String> validActiveModels);
     }
 
     public static final class ModelInfo {
@@ -116,6 +121,62 @@ public final class GeminiAutoClient {
         });
     }
 
+    /**
+     * Probes candidate models against the real-time Gemini server with a lightweight health check ping.
+     * Only returns models that respond with HTTP 200 / successful JSON.
+     */
+    public void validateActiveModels(String apiKey, List<String> candidateModels, ValidateModelsCallback callback) {
+        if (candidateModels == null || candidateModels.isEmpty()) {
+            callback.onValidated(new ArrayList<>());
+            return;
+        }
+
+        List<String> verified = new ArrayList<>();
+        AtomicInteger remaining = new AtomicInteger(candidateModels.size());
+
+        for (String candidate : candidateModels) {
+            String m = candidate;
+            JSONObject pingPayload = new JSONObject();
+            try {
+                pingPayload.put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray().put(new JSONObject().put("text", "ping")))));
+                pingPayload.put("generationConfig", new JSONObject().put("maxOutputTokens", 5));
+            } catch (Exception ignored) { }
+
+            Request req = new Request.Builder()
+                    .url(ROOT + modelPath(m) + ":generateContent?key=" + enc(apiKey))
+                    .post(RequestBody.create(JSON, pingPayload.toString()))
+                    .build();
+
+            http.newCall(req).enqueue(new Callback() {
+                @Override public void onFailure(Call call, IOException e) {
+                    if (remaining.decrementAndGet() == 0) {
+                        callback.onValidated(verified);
+                    }
+                }
+
+                @Override public void onResponse(Call call, Response response) {
+                    try (Response res = response) {
+                        if (res.isSuccessful()) {
+                            String body = res.body() == null ? "" : res.body().string();
+                            JSONObject json = new JSONObject(body);
+                            JSONArray candidates = json.optJSONArray("candidates");
+                            if (candidates != null && candidates.length() > 0) {
+                                synchronized (verified) {
+                                    verified.add(m);
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    } finally {
+                        if (remaining.decrementAndGet() == 0) {
+                            callback.onValidated(verified);
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     public void stream(String apiKey, String model, String prompt, Listener listener) {
         JSONObject payload = new JSONObject();
         int outputTokens = prompt != null && prompt.length() > 6000 ? 4096 : 2048;
@@ -181,7 +242,6 @@ public final class GeminiAutoClient {
                         }
                     }
                     if (!hasEmitted) {
-                        // Empty stream or no candidate generated
                         listener.onError(204, "Tidak ada respon teks dari model " + model, remaining, retry);
                     } else {
                         listener.onComplete(model, usage[0], remaining, retry);
