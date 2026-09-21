@@ -148,6 +148,7 @@ public final class AgentFragmentV2 extends Fragment {
     @Override public void onResume() {
         super.onResume();
         profiles = store.getProfiles();
+        updateStatusIndicator(hasActiveKey(profiles));
         startHeartbeat();
         applyTopInset();
         restoreSession();
@@ -175,6 +176,7 @@ public final class AgentFragmentV2 extends Fragment {
         if (expandButton != null) expandButton.setText("\u2921");
         applyTopInset();
         profiles = store.getProfiles();
+        updateStatusIndicator(hasActiveKey(profiles));
         startHeartbeat();
         restoreSession();
     }
@@ -396,7 +398,8 @@ public final class AgentFragmentV2 extends Fragment {
         messages.removeAllViews();
         profiles = store.getProfiles();
         boolean active = hasActiveKey(profiles);
-        if (session.messages.isEmpty()) {
+        updateStatusIndicator(active);
+        if (session == null || session.messages.isEmpty()) {
             bubble(active ? GREETING : NO_KEY, false);
         } else {
             for (AgentWorkspaceStore.Message m : session.messages) bubble(m.text, "user".equals(m.role));
@@ -907,6 +910,7 @@ public final class AgentFragmentV2 extends Fragment {
                 root.removeView(page);
                 activeSettingsPage = null;
                 profiles = store.getProfiles();
+                updateStatusIndicator(hasActiveKey(profiles));
                 startHeartbeat();
                 restoreSession();
             }).start();
@@ -1038,6 +1042,7 @@ public final class AgentFragmentV2 extends Fragment {
                         statusView.setTextColor(IOS_GREEN);
                     }
                     Toast.makeText(requireContext(), "API Key valid dan bisa digunakan! \u2705", Toast.LENGTH_SHORT).show();
+                    updateStatusIndicator(true);
                     startHeartbeat();
                     restoreSession();
                 });
@@ -1062,29 +1067,33 @@ public final class AgentFragmentV2 extends Fragment {
         });
     }
 
+    private void updateStatusIndicator(boolean active) {
+        if (statusText != null) {
+            statusText.setText(active ? "Connected \u00B7 Gemini" : "Disconnected");
+            statusText.setTextColor(active ? IOS_GREEN : IOS_RED);
+        }
+        if (statusDot != null) {
+            statusDot.setBackground(round(active ? IOS_GREEN : IOS_RED, 5));
+            if (active && pulseAnimator == null) {
+                pulseAnimator = ObjectAnimator.ofFloat(statusDot, "alpha", 1f, 0.25f);
+                pulseAnimator.setDuration(900);
+                pulseAnimator.setRepeatMode(ValueAnimator.REVERSE);
+                pulseAnimator.setRepeatCount(ValueAnimator.INFINITE);
+                pulseAnimator.start();
+            } else if (!active && pulseAnimator != null) {
+                pulseAnimator.cancel();
+                pulseAnimator = null;
+                statusDot.setAlpha(1f);
+            }
+        }
+    }
+
     private void startHeartbeat() {
         stopHeartbeat();
         heartbeat = () -> {
             profiles = store.getProfiles();
             boolean active = hasActiveKey(profiles);
-            if (statusText != null) {
-                statusText.setText(active ? "Connected \u00B7 Gemini" : "Disconnected");
-                statusText.setTextColor(active ? IOS_GREEN : IOS_RED);
-            }
-            if (statusDot != null) {
-                statusDot.setBackground(round(active ? IOS_GREEN : IOS_RED, 5));
-                if (active && pulseAnimator == null) {
-                    pulseAnimator = ObjectAnimator.ofFloat(statusDot, "alpha", 1f, 0.25f);
-                    pulseAnimator.setDuration(900);
-                    pulseAnimator.setRepeatMode(ValueAnimator.REVERSE);
-                    pulseAnimator.setRepeatCount(ValueAnimator.INFINITE);
-                    pulseAnimator.start();
-                } else if (!active && pulseAnimator != null) {
-                    pulseAnimator.cancel();
-                    pulseAnimator = null;
-                    statusDot.setAlpha(1f);
-                }
-            }
+            updateStatusIndicator(active);
             main.postDelayed(heartbeat, 6000);
         };
         main.post(heartbeat);
