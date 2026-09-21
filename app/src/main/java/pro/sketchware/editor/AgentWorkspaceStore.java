@@ -19,6 +19,7 @@ public final class AgentWorkspaceStore {
     private static final String PROFILES = "profiles_json";
     private static final String SESSIONS = "sessions_json";
     private static final String CURRENT = "current_session";
+    private static final String FALLBACK_API_KEY = "fallback_gemini_api_key";
     private final SharedPreferences prefs;
 
     public AgentWorkspaceStore(Context context) {
@@ -65,13 +66,53 @@ public final class AgentWorkspaceStore {
                 for (int i = 0; i < arr.length(); i++) list.add(profileFrom(arr.getJSONObject(i)));
             }
         } catch (Exception ignored) { }
+
+        // Fallback restoration: if list is empty or has no keys, check fallback string
+        String fallbackKey = prefs.getString(FALLBACK_API_KEY, "").trim();
+        if (!fallbackKey.isEmpty()) {
+            boolean hasKey = false;
+            for (Profile p : list) {
+                if (p.key != null && !p.key.trim().isEmpty()) {
+                    hasKey = true;
+                    break;
+                }
+            }
+            if (!hasKey) {
+                if (list.isEmpty()) {
+                    Profile p = new Profile();
+                    p.name = "Gemini 1";
+                    p.key = fallbackKey;
+                    list.add(p);
+                } else {
+                    list.get(0).key = fallbackKey;
+                }
+            }
+        }
+
         return list;
     }
 
     public synchronized void saveProfiles(List<Profile> profiles) {
         JSONArray arr = new JSONArray();
-        try { for (Profile p : profiles) arr.put(profileTo(p)); } catch (Exception ignored) { }
-        prefs.edit().putString(PROFILES, arr.toString()).apply();
+        String activeKey = "";
+        try {
+            for (Profile p : profiles) {
+                arr.put(profileTo(p));
+                if (activeKey.isEmpty() && p.key != null && !p.key.trim().isEmpty()) {
+                    activeKey = p.key.trim();
+                }
+            }
+        } catch (Exception ignored) { }
+
+        SharedPreferences.Editor editor = prefs.edit().putString(PROFILES, arr.toString());
+        if (!activeKey.isEmpty()) {
+            editor.putString(FALLBACK_API_KEY, activeKey);
+        }
+        editor.commit(); // Use synchronous commit() to ensure instant disk persistence
+    }
+
+    public synchronized String getFallbackApiKey() {
+        return prefs.getString(FALLBACK_API_KEY, "").trim();
     }
 
     public synchronized Profile addProfile(String name) {
@@ -109,7 +150,7 @@ public final class AgentWorkspaceStore {
         for (Session s : sessions) if (s.id.equals(id)) return s;
         if (!sessions.isEmpty()) {
             Session first = sessions.get(0);
-            prefs.edit().putString(CURRENT, first.id).apply();
+            prefs.edit().putString(CURRENT, first.id).commit();
             return first;
         }
         return newSession("New chat");
@@ -135,7 +176,7 @@ public final class AgentWorkspaceStore {
                 s.title = title;
                 s.updated = System.currentTimeMillis();
                 saveSessions(sessions);
-                prefs.edit().putString(CURRENT, s.id).apply();
+                prefs.edit().putString(CURRENT, s.id).commit();
                 return s;
             }
         }
@@ -144,11 +185,11 @@ public final class AgentWorkspaceStore {
         s.created = s.updated = System.currentTimeMillis();
         sessions.add(0, s);
         saveSessions(sessions);
-        prefs.edit().putString(CURRENT, s.id).apply();
+        prefs.edit().putString(CURRENT, s.id).commit();
         return s;
     }
 
-    public synchronized void selectSession(String id) { prefs.edit().putString(CURRENT, id).apply(); }
+    public synchronized void selectSession(String id) { prefs.edit().putString(CURRENT, id).commit(); }
     public synchronized String currentSessionId() { return prefs.getString(CURRENT, ""); }
 
     public synchronized Session getSession(String id) {
@@ -178,7 +219,7 @@ public final class AgentWorkspaceStore {
     private void saveSessions(List<Session> sessions) {
         JSONArray arr = new JSONArray();
         try { for (Session s : sessions) arr.put(sessionTo(s)); } catch (Exception ignored) { }
-        prefs.edit().putString(SESSIONS, arr.toString()).apply();
+        prefs.edit().putString(SESSIONS, arr.toString()).commit();
     }
 
     private static JSONObject profileTo(Profile p) throws Exception {

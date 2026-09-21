@@ -405,11 +405,16 @@ public final class AgentFragmentV2 extends Fragment {
     }
 
     private boolean hasActiveKey(List<AgentWorkspaceStore.Profile> list) {
-        if (list == null) return false;
-        for (AgentWorkspaceStore.Profile p : list) {
-            if (p != null && p.key != null && !p.key.trim().isEmpty()) {
-                return true;
+        if (list != null) {
+            for (AgentWorkspaceStore.Profile p : list) {
+                if (p != null && p.key != null && !p.key.trim().isEmpty()) {
+                    return true;
+                }
             }
+        }
+        if (store != null) {
+            String fallback = store.getFallbackApiKey();
+            return !fallback.isEmpty();
         }
         return false;
     }
@@ -425,8 +430,8 @@ public final class AgentFragmentV2 extends Fragment {
 
         profiles = store.getProfiles();
         if (!hasActiveKey(profiles)) {
-            addAssistant("API Key belum dikonfigurasi. Silakan buka Settings untuk menambahkan API Key Gemini.");
-            showSettings();
+            addAssistant("API Key belum dikonfigurasi. Silakan buka Settings (ikon \u2699 di kanan atas) untuk menambahkan API Key Gemini.");
+            Toast.makeText(requireContext(), "Silakan tambahkan API Key di Settings (\u2699)", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -552,6 +557,18 @@ public final class AgentFragmentV2 extends Fragment {
             models.sort((a, b) -> Integer.compare(scoreModel(a, t), scoreModel(b, t)));
             for (String m : models) out.add(new Route(p, m));
         }
+
+        if (out.isEmpty() && store != null) {
+            String fallback = store.getFallbackApiKey();
+            if (!fallback.isEmpty()) {
+                AgentWorkspaceStore.Profile fallbackProf = new AgentWorkspaceStore.Profile();
+                fallbackProf.name = "Gemini";
+                fallbackProf.key = fallback;
+                out.add(new Route(fallbackProf, "gemini-1.5-flash"));
+                out.add(new Route(fallbackProf, "gemini-1.5-pro"));
+            }
+        }
+
         return out;
     }
 
