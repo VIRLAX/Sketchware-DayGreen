@@ -409,6 +409,12 @@ public final class AgentFragmentV2 extends Fragment {
     }
 
     private boolean hasActiveKey(List<AgentWorkspaceStore.Profile> list) {
+        if (store != null) {
+            String fallback = store.getFallbackApiKey();
+            if (fallback != null && !fallback.trim().isEmpty()) {
+                return true;
+            }
+        }
         if (list != null) {
             for (AgentWorkspaceStore.Profile p : list) {
                 if (p != null && p.key != null && !p.key.trim().isEmpty()) {
@@ -416,11 +422,24 @@ public final class AgentFragmentV2 extends Fragment {
                 }
             }
         }
+        return false;
+    }
+
+    private String getBestApiKey(List<AgentWorkspaceStore.Profile> list) {
         if (store != null) {
             String fallback = store.getFallbackApiKey();
-            return fallback != null && !fallback.trim().isEmpty();
+            if (fallback != null && !fallback.trim().isEmpty()) {
+                return fallback.trim();
+            }
         }
-        return false;
+        if (list != null) {
+            for (AgentWorkspaceStore.Profile p : list) {
+                if (p != null && p.key != null && !p.key.trim().isEmpty()) {
+                    return p.key.trim();
+                }
+            }
+        }
+        return "";
     }
 
     private void addAssistant(String text) {
@@ -517,8 +536,11 @@ public final class AgentFragmentV2 extends Fragment {
         if (MUTATING.matcher(prompt).find() || prompt.length() > 250) tier = 2;
         else if (prompt.length() < 50) tier = 0;
 
+        String directKey = getBestApiKey(profiles);
+
         for (AgentWorkspaceStore.Profile p : profiles) {
-            if (p.key == null || p.key.trim().isEmpty()) continue;
+            String useKey = (p.key != null && !p.key.trim().isEmpty()) ? p.key.trim() : directKey;
+            if (useKey.isEmpty()) continue;
             List<String> models = new ArrayList<>(p.models);
             if (models.isEmpty()) {
                 models.add("gemini-1.5-flash");
@@ -526,18 +548,21 @@ public final class AgentFragmentV2 extends Fragment {
             }
             final int t = tier;
             models.sort((a, b) -> Integer.compare(scoreModel(a, t), scoreModel(b, t)));
-            for (String m : models) out.add(new Route(p, m));
+            for (String m : models) {
+                AgentWorkspaceStore.Profile activeP = new AgentWorkspaceStore.Profile();
+                activeP.id = p.id;
+                activeP.name = p.name;
+                activeP.key = useKey;
+                out.add(new Route(activeP, m));
+            }
         }
 
-        if (out.isEmpty() && store != null) {
-            String fallback = store.getFallbackApiKey();
-            if (fallback != null && !fallback.trim().isEmpty()) {
-                AgentWorkspaceStore.Profile fallbackProf = new AgentWorkspaceStore.Profile();
-                fallbackProf.name = "Gemini";
-                fallbackProf.key = fallback.trim();
-                out.add(new Route(fallbackProf, "gemini-1.5-flash"));
-                out.add(new Route(fallbackProf, "gemini-1.5-pro"));
-            }
+        if (out.isEmpty() && !directKey.isEmpty()) {
+            AgentWorkspaceStore.Profile fallbackProf = new AgentWorkspaceStore.Profile();
+            fallbackProf.name = "Gemini";
+            fallbackProf.key = directKey;
+            out.add(new Route(fallbackProf, "gemini-1.5-flash"));
+            out.add(new Route(fallbackProf, "gemini-1.5-pro"));
         }
 
         return out;
@@ -899,6 +924,7 @@ public final class AgentFragmentV2 extends Fragment {
         if (providerList == null) return;
         providerList.removeAllViews();
         profiles = store.getProfiles();
+        String fallback = store.getFallbackApiKey();
 
         for (final AgentWorkspaceStore.Profile p : profiles) {
             LinearLayout card = column(requireContext());
@@ -922,7 +948,8 @@ public final class AgentFragmentV2 extends Fragment {
             card.addView(headRow);
 
             final EditText key = new EditText(requireContext());
-            key.setText(p.key);
+            String existingKey = (p.key != null && !p.key.isEmpty()) ? p.key : fallback;
+            key.setText(existingKey);
             key.setHint("Tempel API Key Gemini di sini");
             key.setHintTextColor(TEXT_SECONDARY);
             key.setTextColor(TEXT_PRIMARY);
@@ -935,21 +962,10 @@ public final class AgentFragmentV2 extends Fragment {
             keyLp.topMargin = dp(10);
             card.addView(key, keyLp);
 
-            key.addTextChangedListener(new TextWatcher() {
-                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                    if (key.hasFocus()) {
-                        p.key = s == null ? "" : s.toString().trim();
-                        p.enabled = true;
-                        store.saveProfiles(profiles);
-                    }
-                }
-                @Override public void afterTextChanged(Editable s) { }
-            });
-
-            boolean ok = p.lastError.isEmpty() && (!p.models.isEmpty() || !p.key.isEmpty());
+            boolean hasKeyNow = (existingKey != null && !existingKey.trim().isEmpty());
+            boolean ok = p.lastError.isEmpty() && hasKeyNow;
             String statusLine = p.lastError.isEmpty()
-                    ? (p.key.isEmpty() ? "Belum ada API Key" : (p.models.isEmpty() ? "Siap digunakan \u00B7 Valid" : "Aktif \u00B7 " + p.models.size() + " model siap" + (p.rate.isEmpty() ? "" : " \u00B7 " + p.rate)))
+                    ? (!hasKeyNow ? "Belum ada API Key" : (p.models.isEmpty() ? "Siap digunakan \u00B7 Valid" : "Aktif \u00B7 " + p.models.size() + " model siap" + (p.rate.isEmpty() ? "" : " \u00B7 " + p.rate)))
                     : p.lastError;
             final TextView status = label(requireContext(), statusLine, 11, false);
             status.setTextColor(p.lastError.isEmpty() ? (ok ? IOS_GREEN : TEXT_SECONDARY) : IOS_RED);
@@ -968,15 +984,15 @@ public final class AgentFragmentV2 extends Fragment {
             validate.setOnClickListener(v -> {
                 bounce(v);
                 String currentKey = key.getText().toString().trim();
-                p.key = currentKey;
-                p.enabled = true;
-                store.saveProfiles(profiles);
                 if (currentKey.isEmpty()) {
                     Toast.makeText(requireContext(), "Masukkan API Key terlebih dahulu", Toast.LENGTH_SHORT).show();
                     status.setText("API Key kosong");
                     status.setTextColor(IOS_RED);
                     return;
                 }
+                p.key = currentKey;
+                p.enabled = true;
+                store.setDirectApiKey(currentKey);
                 status.setText("Memeriksa API Key ke Google AI Studio...");
                 status.setTextColor(TEXT_SECONDARY);
                 validateAPI(p, status, key);
@@ -1001,13 +1017,13 @@ public final class AgentFragmentV2 extends Fragment {
                 p.enabled = true;
                 p.lastError = "";
                 p.rate = remaining;
-                store.saveProfiles(profiles);
+                store.setDirectApiKey(p.key);
                 main.post(() -> {
                     if (keyInput != null && !p.key.isEmpty()) {
                         keyInput.setText(p.key);
                     }
                     if (statusView != null) {
-                        statusView.setText("Aktif \u00B7 " + p.models.size() + " model siap");
+                        statusView.setText("Aktif \u00B7 " + (p.models.isEmpty() ? 2 : p.models.size()) + " model siap");
                         statusView.setTextColor(IOS_GREEN);
                     }
                     Toast.makeText(requireContext(), "API Key valid dan bisa digunakan! \u2705", Toast.LENGTH_SHORT).show();
@@ -1021,7 +1037,7 @@ public final class AgentFragmentV2 extends Fragment {
             @Override public void onError(int status, String message, String remaining, String retry) {
                 p.lastError = message;
                 p.enabled = true;
-                store.saveProfiles(profiles);
+                store.setDirectApiKey(p.key);
                 main.post(() -> {
                     if (keyInput != null && !p.key.isEmpty()) {
                         keyInput.setText(p.key);

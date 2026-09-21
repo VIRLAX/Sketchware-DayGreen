@@ -123,6 +123,22 @@ public final class AgentWorkspaceStore {
         return prefs.getString(FALLBACK_API_KEY, "").trim();
     }
 
+    public synchronized void setDirectApiKey(String key) {
+        if (key == null) key = "";
+        key = key.trim();
+        prefs.edit().putString(FALLBACK_API_KEY, key).commit();
+        List<Profile> list = getProfiles();
+        if (list.isEmpty()) {
+            Profile p = new Profile();
+            p.name = "Gemini 1";
+            p.key = key;
+            list.add(p);
+        } else {
+            list.get(0).key = key;
+        }
+        saveProfiles(list);
+    }
+
     public synchronized Profile addProfile(String name) {
         List<Profile> list = getProfiles();
         Profile p = new Profile();
