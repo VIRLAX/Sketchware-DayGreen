@@ -927,16 +927,7 @@ public final class AgentFragmentV2 extends Fragment {
         providerList.removeAllViews();
         profiles = store.getProfiles();
 
-        if (profiles.isEmpty()) {
-            TextView empty = label(requireContext(), "Belum ada API Key.\nTambahkan lewat tombol di bawah.", 13, false);
-            empty.setTextColor(TEXT_SECONDARY);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dp(28), 0, dp(28));
-            providerList.addView(empty);
-            return;
-        }
-
-        for (AgentWorkspaceStore.Profile p : profiles) {
+        for (final AgentWorkspaceStore.Profile p : profiles) {
             LinearLayout card = column(requireContext());
             card.setPadding(dp(16), dp(14), dp(16), dp(14));
             card.setBackground(stroke(CARD_DARK, dp(13), BORDER_DARK));
@@ -974,9 +965,11 @@ public final class AgentFragmentV2 extends Fragment {
             key.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                    p.key = s == null ? "" : s.toString().trim();
-                    p.enabled = true;
-                    store.saveProfiles(profiles);
+                    if (key.hasFocus()) {
+                        p.key = s == null ? "" : s.toString().trim();
+                        p.enabled = true;
+                        store.saveProfiles(profiles);
+                    }
                 }
                 @Override public void afterTextChanged(Editable s) { }
             });
