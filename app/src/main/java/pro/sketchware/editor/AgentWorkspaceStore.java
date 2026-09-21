@@ -89,6 +89,14 @@ public final class AgentWorkspaceStore {
             }
         }
 
+        // If completely empty, seed exactly 1 initial Profile so the user always has a card ready
+        if (list.isEmpty()) {
+            Profile defaultProfile = new Profile();
+            defaultProfile.name = "Gemini 1";
+            list.add(defaultProfile);
+            saveProfiles(list);
+        }
+
         return list;
     }
 
@@ -127,6 +135,13 @@ public final class AgentWorkspaceStore {
     public synchronized void removeProfile(String id) {
         List<Profile> list = getProfiles();
         list.removeIf(p -> p.id.equals(id));
+        if (list.isEmpty()) {
+            // Keep at least one default profile card ready
+            Profile p = new Profile();
+            p.name = "Gemini 1";
+            list.add(p);
+            prefs.edit().remove(FALLBACK_API_KEY).commit();
+        }
         saveProfiles(list);
     }
 
