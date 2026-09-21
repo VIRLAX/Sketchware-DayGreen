@@ -53,6 +53,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import pro.sketchware.activities.editor.view.ViewCodeEditorActivity;
@@ -81,7 +82,7 @@ public final class AgentFragmentV2 extends Fragment {
     private static final int AI_BUBBLE = 0xFF15171C;
     private static final int CODE_BG = 0xFF0E0F12;
 
-    private static final String GREETING = "Halo! Welcome to Dayven AI \uD83D\uDC4B\u2728\nAPI key kamu sudah aktif dan bisa langsung digunakan secara normal ya!\n\nSekarang saya sudah siap bantu kamu. Ada bug yang mau di-fix, atau mau tambahkan fitur dan code baru ke proyek kamu? Kirim saja detail atau potongan kodenya di sini, nanti saya bantu selesaikan! \uD83D\uDE80";
+    private static final String GREETING = "Halo! Welcome to Dayven AI \uD83D\uDC4B\u2728\nAPI key kamu sudah aktif dan siap digunakan!\n\nSekarang saya siap bantu kamu. Ada bug yang mau di-fix, mau tambah fitur baru, atau mulai project dari nol? Kirim aja detail atau potongan kodenya, saya langsung kerjakan! \uD83D\uDE80";
     private static final String NO_KEY = "Halo! Saya Dayven AI \uD83D\uDC4B\nSilakan buka ikon Settings di kanan atas untuk memasukkan API Key Google AI Studio (Gemini) supaya saya bisa mulai bekerja.";
     private static final String THINKING_BASE = "\uD83D\uDCAD Dayven AI lagi mikir dulu ya...\nsedang menganalisis kode dan menyusun solusinya";
 
@@ -1193,23 +1194,66 @@ public final class AgentFragmentV2 extends Fragment {
 
     private CharSequence richText(String value) {
         if (value == null) return "";
-        SpannableStringBuilder ssb = new SpannableStringBuilder(value);
-        int start = value.indexOf("```");
-        while (start != -1) {
-            int end = value.indexOf("```", start + 3);
-            if (end == -1) break;
-            ssb.setSpan(new TypefaceSpan("monospace"), start, end + 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ssb.setSpan(new BackgroundColorSpan(CODE_BG), start, end + 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ssb.setSpan(new ForegroundColorSpan(0xFFE4E9F2), start, end + 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            start = value.indexOf("```", end + 3);
+
+        // Strip markdown bold and italic markers cleanly:
+        // **bold** -> bold styled with StyleSpan(BOLD)
+        // *italic* or _italic_ -> italic styled with StyleSpan(ITALIC)
+        // ```code``` -> monospace formatted
+        SpannableStringBuilder ssb = new SpannableStringBuilder();
+        int len = value.length();
+        int i = 0;
+
+        while (i < len) {
+            // Check for code blocks
+            if (value.startsWith("```", i)) {
+                int end = value.indexOf("```", i + 3);
+                if (end != -1) {
+                    int blockStart = ssb.length();
+                    String codeContent = value.substring(i + 3, end);
+                    // Drop initial language tag line if present
+                    int firstLine = codeContent.indexOf('\n');
+                    if (firstLine != -1 && firstLine < 20) {
+                        codeContent = codeContent.substring(firstLine + 1);
+                    }
+                    ssb.append(codeContent.trim());
+                    int blockEnd = ssb.length();
+                    ssb.setSpan(new TypefaceSpan("monospace"), blockStart, blockEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.setSpan(new BackgroundColorSpan(CODE_BG), blockStart, blockEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.setSpan(new ForegroundColorSpan(0xFFE4E9F2), blockStart, blockEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    i = end + 3;
+                    continue;
+                }
+            }
+
+            // Check for bold **text**
+            if (value.startsWith("**", i)) {
+                int end = value.indexOf("**", i + 2);
+                if (end != -1) {
+                    int spanStart = ssb.length();
+                    ssb.append(value.substring(i + 2, end));
+                    ssb.setSpan(new StyleSpan(Typeface.BOLD), spanStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    i = end + 2;
+                    continue;
+                }
+            }
+
+            // Check for single *italic*
+            if (value.charAt(i) == '*' && i + 1 < len && value.charAt(i + 1) != ' ') {
+                int end = value.indexOf('*', i + 1);
+                if (end != -1 && end > i + 1) {
+                    int spanStart = ssb.length();
+                    ssb.append(value.substring(i + 1, end));
+                    ssb.setSpan(new StyleSpan(Typeface.ITALIC), spanStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    i = end + 1;
+                    continue;
+                }
+            }
+
+            // Normal character
+            ssb.append(value.charAt(i));
+            i++;
         }
-        int bold = value.indexOf("**");
-        while (bold != -1) {
-            int close = value.indexOf("**", bold + 2);
-            if (close == -1) break;
-            ssb.setSpan(new StyleSpan(Typeface.BOLD), bold, close + 2, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            bold = value.indexOf("**", close + 2);
-        }
+
         return ssb;
     }
 
