@@ -75,11 +75,13 @@ import pro.sketchware.activities.editor.view.ViewCodeEditorActivity;
  * Dayven AI Agent v3.0 - Professional Interactive Workspace.
  *
  * Capabilities & UI Enhancements:
+ * - HD vector graphics for all UI controls: settings, menu, rollback, minimize, send, copy, cancel, check.
+ * - Zero raw emojis used on interactive buttons.
  * - Fluid animations: bouncy entries, hover scaling, glowing pulse indicators.
  * - ChatGPT-style code blocks with language labels and one-tap integrated copy buttons.
  * - Themed dynamic thinking state with glowing pulse effect.
  * - Drawer with App Icon & real App Name profile (from project metadata, not package name).
- * - Settings sub-menu with 6 developer-grade utilities (Model, Temp, Context, Export, Clear, Telemetry).
+ * - Settings sub-menu with 6 developer-grade utilities.
  * - Chat history long-press permanent deletion while preserving underlying AgentMemoryEngine.
  */
 public final class AgentFragmentV2 extends Fragment {
@@ -203,7 +205,10 @@ public final class AgentFragmentV2 extends Fragment {
         expanded = true;
         Activity act = getActivity();
         if (act != null) AgentTabEnhancer.setExpanded(act, true);
-        if (expandButton != null) expandButton.setText("⤡");
+        if (expandButton != null) {
+            int minimizeId = getResDrawable(requireContext(), "ic_dayven_minimize");
+            if (minimizeId != 0) expandButton.setIconResource(minimizeId);
+        }
         applyTopInset();
         profiles = store.getProfiles();
         updateStatusIndicator(hasActiveKey(profiles));
@@ -285,18 +290,19 @@ public final class AgentFragmentV2 extends Fragment {
         header.setBackgroundColor(SURFACE_DARK);
         header.setElevation(dp(3));
 
-        MaterialButton menuBtn = iconButton(c, "☰", "Menu & History", 18);
+        MaterialButton menuBtn = vectorIconButton(c, "ic_dayven_menu", "Menu & History", dp(20));
         menuBtn.setOnClickListener(v -> {
             bounce(v);
             showDrawer();
         });
         header.addView(menuBtn, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        TextView avatar = new TextView(c);
-        avatar.setText("✦");
-        avatar.setTextSize(15);
-        avatar.setTextColor(ACCENT);
-        avatar.setGravity(Gravity.CENTER);
+        ImageView avatar = new ImageView(c);
+        int sparkleId = getResDrawable(c, "ic_dayven_sparkle");
+        if (sparkleId != 0) avatar.setImageResource(sparkleId);
+        avatar.setColorFilter(ACCENT);
+        avatar.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        avatar.setPadding(dp(6), dp(6), dp(6), dp(6));
         avatar.setBackground(round(ACCENT_SOFT, 16));
         LinearLayout.LayoutParams avatarLp = new LinearLayout.LayoutParams(dp(32), dp(32));
         avatarLp.leftMargin = dp(2);
@@ -315,21 +321,21 @@ public final class AgentFragmentV2 extends Fragment {
         titleGroup.addView(subtitle);
         header.addView(titleGroup, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        MaterialButton undoBtn = iconButton(c, "⏪", "Rollback perubahan", 15);
+        MaterialButton undoBtn = vectorIconButton(c, "ic_dayven_rollback", "Rollback perubahan", dp(19));
         undoBtn.setOnClickListener(v -> {
             bounce(v);
             showRollbackCard();
         });
         header.addView(undoBtn, new LinearLayout.LayoutParams(dp(40), dp(42)));
 
-        expandButton = iconButton(c, expanded ? "⤡" : "⤢", "Minimize or expand", 16);
+        expandButton = vectorIconButton(c, "ic_dayven_minimize", "Minimize or expand", dp(19));
         expandButton.setOnClickListener(v -> {
             bounce(v);
             toggleExpand();
         });
         header.addView(expandButton, new LinearLayout.LayoutParams(dp(40), dp(42)));
 
-        MaterialButton settingsBtn = iconButton(c, "⚙", "Settings", 16);
+        MaterialButton settingsBtn = vectorIconButton(c, "ic_dayven_settings", "Settings", dp(20));
         settingsBtn.setOnClickListener(v -> {
             bounce(v);
             showSettingsDialog();
@@ -372,8 +378,8 @@ public final class AgentFragmentV2 extends Fragment {
         inputArea.setBackground(stroke(SURFACE_DARK, dp(22), BORDER_DARK));
         inputArea.setPadding(dp(6), dp(4), dp(6), dp(4));
 
-        MaterialButton attach = iconButton(c, "+", "Attach context", 18);
-        attach.setTextColor(TEXT_SECONDARY);
+        MaterialButton attach = vectorIconButton(c, "ic_dayven_add", "Attach context", dp(18));
+        attach.setIconTint(ColorStateList.valueOf(TEXT_SECONDARY));
         attach.setOnClickListener(v -> {
             bounce(v);
             showContextSheet();
@@ -390,9 +396,9 @@ public final class AgentFragmentV2 extends Fragment {
         composer.setPadding(dp(6), dp(8), dp(6), dp(8));
         inputArea.addView(composer, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        sendButton = iconButton(c, "↑", "Send", 16);
+        sendButton = vectorIconButton(c, "ic_dayven_send", "Send", dp(18));
+        sendButton.setIconTint(ColorStateList.valueOf(Color.WHITE));
         sendButton.setBackgroundTintList(ColorStateList.valueOf(ACCENT));
-        sendButton.setTextColor(Color.WHITE);
         sendButton.setCornerRadius(dp(18));
         sendButton.setScaleX(0f);
         sendButton.setScaleY(0f);
@@ -428,7 +434,10 @@ public final class AgentFragmentV2 extends Fragment {
         if (act == null) return;
         expanded = !expanded;
         AgentTabEnhancer.setExpanded(act, expanded);
-        expandButton.setText(expanded ? "⤡" : "⤢");
+        if (expandButton != null) {
+            int iconId = getResDrawable(requireContext(), "ic_dayven_minimize");
+            if (iconId != 0) expandButton.setIconResource(iconId);
+        }
         applyTopInset();
     }
 
@@ -505,8 +514,8 @@ public final class AgentFragmentV2 extends Fragment {
 
         profiles = store.getProfiles();
         if (!hasActiveKey(profiles)) {
-            addAssistant("API Key belum dikonfigurasi. Silakan buka Settings (ikon ⚙ di kanan atas) untuk menambahkan API Key Gemini.");
-            Toast.makeText(requireContext(), "Silakan tambahkan API Key di Settings (⚙)", Toast.LENGTH_SHORT).show();
+            addAssistant("API Key belum dikonfigurasi. Silakan buka Settings (ikon di kanan atas) untuk menambahkan API Key Gemini.");
+            Toast.makeText(requireContext(), "Silakan tambahkan API Key di Settings", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -960,9 +969,16 @@ public final class AgentFragmentV2 extends Fragment {
         headerRow.addView(langTv, new LinearLayout.LayoutParams(0, -2, 1f));
 
         final MaterialButton copyBtn = new MaterialButton(c);
-        copyBtn.setText("📋 Copy");
+        copyBtn.setText("Copy");
         copyBtn.setTextSize(11);
         copyBtn.setAllCaps(false);
+        int copyIconId = getResDrawable(c, "ic_dayven_copy");
+        if (copyIconId != 0) {
+            copyBtn.setIconResource(copyIconId);
+            copyBtn.setIconTint(ColorStateList.valueOf(Color.WHITE));
+            copyBtn.setIconSize(dp(14));
+            copyBtn.setIconPadding(dp(4));
+        }
         copyBtn.setBackgroundTintList(ColorStateList.valueOf(0xFF2563EB));
         copyBtn.setTextColor(Color.WHITE);
         copyBtn.setCornerRadius(dp(8));
@@ -975,10 +991,13 @@ public final class AgentFragmentV2 extends Fragment {
             bounce(v);
             ClipboardManager cm = (ClipboardManager) c.getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("Code", code));
-            copyBtn.setText("✅ Copied!");
+            copyBtn.setText("Copied!");
+            int checkIconId = getResDrawable(c, "ic_dayven_check");
+            if (checkIconId != 0) copyBtn.setIconResource(checkIconId);
             copyBtn.setBackgroundTintList(ColorStateList.valueOf(0xFF059669));
             main.postDelayed(() -> {
-                copyBtn.setText("📋 Copy");
+                copyBtn.setText("Copy");
+                if (copyIconId != 0) copyBtn.setIconResource(copyIconId);
                 copyBtn.setBackgroundTintList(ColorStateList.valueOf(0xFF2563EB));
             }, 1800);
             Toast.makeText(c, "Kode berhasil disalin! 🚀", Toast.LENGTH_SHORT).show();
@@ -1004,7 +1023,7 @@ public final class AgentFragmentV2 extends Fragment {
         LinearLayout holder = row(requireContext());
         holder.setGravity(Gravity.START);
 
-        final TextView copy = label(requireContext(), "📋 COPY SEMUA", 10, true);
+        final TextView copy = label(requireContext(), "COPY SEMUA", 10, true);
         copy.setTextColor(TEXT_SECONDARY);
         copy.setPadding(dp(10), dp(4), dp(10), dp(4));
         copy.setBackground(round(CARD_DARK, 9));
@@ -1027,12 +1046,13 @@ public final class AgentFragmentV2 extends Fragment {
         return holder;
     }
 
-    private TextView aiAvatar() {
-        TextView avatar = new TextView(requireContext());
-        avatar.setText("✦");
-        avatar.setTextSize(11);
-        avatar.setTextColor(ACCENT);
-        avatar.setGravity(Gravity.CENTER);
+    private View aiAvatar() {
+        ImageView avatar = new ImageView(requireContext());
+        int sparkleId = getResDrawable(requireContext(), "ic_dayven_sparkle");
+        if (sparkleId != 0) avatar.setImageResource(sparkleId);
+        avatar.setColorFilter(ACCENT);
+        avatar.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        avatar.setPadding(dp(4), dp(4), dp(4), dp(4));
         avatar.setBackground(round(ACCENT_SOFT, 12));
         return avatar;
     }
@@ -1068,7 +1088,7 @@ public final class AgentFragmentV2 extends Fragment {
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         card.setBackground(stroke(CARD_DARK, dp(14), BORDER_DARK));
 
-        TextView title = label(requireContext(), "📋 PREVIEW PERUBAHAN", 13, true);
+        TextView title = label(requireContext(), "PREVIEW PERUBAHAN", 13, true);
         title.setTextColor(ACCENT);
         card.addView(title);
 
@@ -1086,8 +1106,20 @@ public final class AgentFragmentV2 extends Fragment {
         }
 
         LinearLayout actionsRow = row(requireContext());
-        MaterialButton cancel = ghostButton("❌ Cancel");
-        MaterialButton accept = solidButton("✅ Accept & Apply");
+        MaterialButton cancel = ghostButton("Cancel");
+        int cancelId = getResDrawable(requireContext(), "ic_dayven_cancel");
+        if (cancelId != 0) {
+            cancel.setIconResource(cancelId);
+            cancel.setIconTint(ColorStateList.valueOf(IOS_RED));
+            cancel.setIconSize(dp(15));
+        }
+        MaterialButton accept = solidButton("Accept & Apply");
+        int acceptId = getResDrawable(requireContext(), "ic_dayven_check");
+        if (acceptId != 0) {
+            accept.setIconResource(acceptId);
+            accept.setIconTint(ColorStateList.valueOf(Color.WHITE));
+            accept.setIconSize(dp(15));
+        }
         actionsRow.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1f));
         LinearLayout.LayoutParams acceptLp = new LinearLayout.LayoutParams(0, -2, 1.4f);
         acceptLp.leftMargin = dp(8);
@@ -1125,7 +1157,7 @@ public final class AgentFragmentV2 extends Fragment {
             String label = original == null ? "Perubahan Dayven AI"
                     : (original.length() > 60 ? original.substring(0, 60) + "..." : original);
             String report = AgentActionExecutor.applyAll(requireContext(), projectId, writable, memory, label);
-            addAssistant(report + "\n\nKalau hasilnya kurang pas, bilang \"balik ke yang tadi\" dan semua file di atas saya kembalikan sekaligus. ⏪");
+            addAssistant(report + "\n\nKalau hasilnya kurang pas, bilang \"balik ke yang tadi\" dan semua file di atas saya kembalikan sekaligus.");
         }
 
         if (!handoff.isEmpty()) {
@@ -1159,7 +1191,7 @@ public final class AgentFragmentV2 extends Fragment {
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         card.setBackground(stroke(CARD_DARK, dp(14), BORDER_DARK));
 
-        TextView title = label(requireContext(), "⏪ ROLLBACK DETECTED", 13, true);
+        TextView title = label(requireContext(), "ROLLBACK DETECTED", 13, true);
         title.setTextColor(ACCENT);
         card.addView(title);
 
@@ -1181,8 +1213,20 @@ public final class AgentFragmentV2 extends Fragment {
         card.addView(depth);
 
         LinearLayout actionsRow = row(requireContext());
-        MaterialButton cancel = ghostButton("❌ Cancel");
-        MaterialButton accept = solidButton("✅ Accept rollback");
+        MaterialButton cancel = ghostButton("Cancel");
+        int rbCancelId = getResDrawable(requireContext(), "ic_dayven_cancel");
+        if (rbCancelId != 0) {
+            cancel.setIconResource(rbCancelId);
+            cancel.setIconTint(ColorStateList.valueOf(IOS_RED));
+            cancel.setIconSize(dp(15));
+        }
+        MaterialButton accept = solidButton("Accept rollback");
+        int rbAcceptId = getResDrawable(requireContext(), "ic_dayven_check");
+        if (rbAcceptId != 0) {
+            accept.setIconResource(rbAcceptId);
+            accept.setIconTint(ColorStateList.valueOf(Color.WHITE));
+            accept.setIconSize(dp(15));
+        }
         actionsRow.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1f));
         LinearLayout.LayoutParams acceptLp = new LinearLayout.LayoutParams(0, -2, 1.4f);
         acceptLp.leftMargin = dp(8);
@@ -1273,7 +1317,7 @@ public final class AgentFragmentV2 extends Fragment {
 
         profileBar.addView(nameCol, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        MaterialButton settingsIconBtn = iconButton(c, "⚙", "Settings", 17);
+        MaterialButton settingsIconBtn = vectorIconButton(c, "ic_dayven_settings", "Settings", dp(18));
         settingsIconBtn.setOnClickListener(v -> {
             bounce(v);
             closeDrawer(overlay, drawer);
@@ -1284,7 +1328,14 @@ public final class AgentFragmentV2 extends Fragment {
         drawer.addView(profileBar);
 
         // 2. New Chat Button
-        MaterialButton newChat = solidButton("＋  New Chat");
+        MaterialButton newChat = solidButton("New Chat");
+        int addIconId = getResDrawable(c, "ic_dayven_add");
+        if (addIconId != 0) {
+            newChat.setIconResource(addIconId);
+            newChat.setIconTint(ColorStateList.valueOf(Color.WHITE));
+            newChat.setIconSize(dp(16));
+            newChat.setIconGravity(MaterialButton.ICON_GRAVITY_TEXT_START);
+        }
         newChat.setOnClickListener(v -> {
             bounce(v);
             session = store.newSession("New chat");
@@ -1378,7 +1429,7 @@ public final class AgentFragmentV2 extends Fragment {
                         .setMessage("Apakah kamu yakin ingin menghapus obrolan \"" + s.title + "\" secara permanen?\n\nCatatan: Memori arsitektur dan rollback kode project kamu tetap aman terjaga.")
                         .setPositiveButton("Hapus Permanen", (dialog, which) -> {
                             store.deleteSession(s.id);
-                            Toast.makeText(requireContext(), "Riwayat chat dihapus permanen 🗑️", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(requireContext(), "Riwayat chat dihapus permanen", Toast.LENGTH_SHORT).show();
                             if (s.id.equals(session.id)) {
                                 session = store.getOrCreateCurrent();
                                 sessionTitle.setText(session.title);
@@ -1430,16 +1481,16 @@ public final class AgentFragmentV2 extends Fragment {
     private void showSettingsDialog() {
         Context c = requireContext();
         String[] items = {
-            "🔑  Kelola API Key & Provider",
-            "🧠  Pilih Model Utama (Gemini)",
-            "🎛️  Temperature & Kreativitas",
-            "💾  Kapasitas Token & Konteks",
-            "📤  Ekspor Transkrip Percakapan",
-            "🗑️  Hapus Semua Obrolan (Clean Slate)"
+            "Kelola API Key & Provider",
+            "Pilih Model Utama (Gemini)",
+            "Temperature & Kreativitas",
+            "Kapasitas Token & Konteks",
+            "Ekspor Transkrip Percakapan",
+            "Hapus Semua Obrolan (Clean Slate)"
         };
 
         new MaterialAlertDialogBuilder(c)
-                .setTitle("⚙️ Dayven AI Developer Settings")
+                .setTitle("Dayven AI Developer Settings")
                 .setItems(items, (dialog, which) -> {
                     switch (which) {
                         case 0 -> showSettings();
@@ -1466,7 +1517,7 @@ public final class AgentFragmentV2 extends Fragment {
         int currentIdx = sp.getInt("pref_model_idx", 0);
 
         new MaterialAlertDialogBuilder(requireContext())
-                .setTitle("🧠 Pilih Model Gemini Utama")
+                .setTitle("Pilih Model Gemini Utama")
                 .setSingleChoiceItems(models, currentIdx, (dialog, which) -> {
                     sp.edit().putInt("pref_model_idx", which).commit();
                     Toast.makeText(requireContext(), "Model diubah ke " + models[which].split(" ")[0], Toast.LENGTH_SHORT).show();
@@ -1487,7 +1538,7 @@ public final class AgentFragmentV2 extends Fragment {
         int currentIdx = sp.getInt("pref_temp_idx", 1);
 
         new MaterialAlertDialogBuilder(requireContext())
-                .setTitle("🎛️ Pengaturan Temperature")
+                .setTitle("Pengaturan Temperature")
                 .setSingleChoiceItems(temps, currentIdx, (dialog, which) -> {
                     sp.edit().putInt("pref_temp_idx", which).commit();
                     Toast.makeText(requireContext(), "Temperature disimpan ✅", Toast.LENGTH_SHORT).show();
@@ -1509,7 +1560,7 @@ public final class AgentFragmentV2 extends Fragment {
                 + "• Multi-file Auto Continuation: Aktif (max 4 level)";
 
         new MaterialAlertDialogBuilder(requireContext())
-                .setTitle("💾 Token & Telemetry Info")
+                .setTitle("Token & Telemetry Info")
                 .setMessage(info)
                 .setPositiveButton("Mengerti", null)
                 .show();
@@ -1537,7 +1588,7 @@ public final class AgentFragmentV2 extends Fragment {
 
     private void confirmClearAllSessions() {
         new MaterialAlertDialogBuilder(requireContext())
-                .setTitle("🗑️ Hapus Semua Riwayat Chat?")
+                .setTitle("Hapus Semua Riwayat Chat?")
                 .setMessage("Tindakan ini akan menghapus semua sesi obrolan yang tersimpan.\nSistem AI akan kembali fresh seperti baru.")
                 .setPositiveButton("Hapus Semua", (dialog, which) -> {
                     for (AgentWorkspaceStore.Session s : store.getSessions()) {
@@ -1628,7 +1679,14 @@ public final class AgentFragmentV2 extends Fragment {
         scroll.addView(providerList);
         body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        MaterialButton addBtn = ghostButton("＋  Add Gemini API Key");
+        MaterialButton addBtn = ghostButton("Add Gemini API Key");
+        int addKeyIconId = getResDrawable(requireContext(), "ic_dayven_add");
+        if (addKeyIconId != 0) {
+            addBtn.setIconResource(addKeyIconId);
+            addBtn.setIconTint(ColorStateList.valueOf(TEXT_PRIMARY));
+            addBtn.setIconSize(dp(16));
+            addBtn.setIconGravity(MaterialButton.ICON_GRAVITY_TEXT_START);
+        }
         addBtn.setOnClickListener(v -> {
             store.addProfile("Gemini " + (store.getProfiles().size() + 1));
             refreshSettings();
@@ -1673,9 +1731,12 @@ public final class AgentFragmentV2 extends Fragment {
             LinearLayout headRow = row(requireContext());
             headRow.setGravity(Gravity.CENTER_VERTICAL);
 
-            TextView badge = label(requireContext(), "✦", 12, false);
-            badge.setTextColor(ACCENT);
-            badge.setGravity(Gravity.CENTER);
+            ImageView badge = new ImageView(requireContext());
+            int sparkleId = getResDrawable(requireContext(), "ic_dayven_sparkle");
+            if (sparkleId != 0) badge.setImageResource(sparkleId);
+            badge.setColorFilter(ACCENT);
+            badge.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            badge.setPadding(dp(3), dp(3), dp(3), dp(3));
             badge.setBackground(round(ACCENT_SOFT, 11));
             LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(dp(22), dp(22));
             badgeLp.rightMargin = dp(8);
@@ -1713,7 +1774,14 @@ public final class AgentFragmentV2 extends Fragment {
 
             LinearLayout actions = row(requireContext());
             MaterialButton validate = solidButton("Check & Save");
-            MaterialButton delete = ghostButton("🗑");
+            MaterialButton delete = ghostButton("");
+            int delIconId = getResDrawable(requireContext(), "ic_dayven_delete");
+            if (delIconId != 0) {
+                delete.setIconResource(delIconId);
+                delete.setIconTint(ColorStateList.valueOf(TEXT_SECONDARY));
+                delete.setIconSize(dp(18));
+                delete.setIconGravity(MaterialButton.ICON_GRAVITY_TEXT_START);
+            }
             actions.addView(validate, new LinearLayout.LayoutParams(0, -2, 1f));
             LinearLayout.LayoutParams delLp = new LinearLayout.LayoutParams(dp(46), dp(44));
             delLp.leftMargin = dp(8);
@@ -1860,6 +1928,36 @@ public final class AgentFragmentV2 extends Fragment {
         v.setTextSize(s);
         v.setTypeface(null, bold ? Typeface.BOLD : Typeface.NORMAL);
         return v;
+    }
+
+    private int getResDrawable(Context c, String name) {
+        try {
+            int id = c.getResources().getIdentifier(name, "drawable", c.getPackageName());
+            if (id != 0) return id;
+        } catch (Exception ignored) { }
+        return 0;
+    }
+
+    private MaterialButton vectorIconButton(Context c, String drawableName, String description, int iconSize) {
+        MaterialButton b = new MaterialButton(c);
+        int resId = getResDrawable(c, drawableName);
+        if (resId != 0) {
+            b.setIconResource(resId);
+            b.setIconTint(ColorStateList.valueOf(TEXT_PRIMARY));
+            b.setIconGravity(MaterialButton.ICON_GRAVITY_TEXT_START);
+            b.setIconPadding(0);
+            b.setIconSize(iconSize > 0 ? iconSize : dp(20));
+        }
+        b.setContentDescription(description);
+        b.setBackgroundTintList(ColorStateList.valueOf(Color.TRANSPARENT));
+        b.setRippleColor(ColorStateList.valueOf(ACCENT_SOFT));
+        b.setCornerRadius(dp(20));
+        b.setInsetTop(0);
+        b.setInsetBottom(0);
+        b.setPadding(0, 0, 0, 0);
+        b.setMinWidth(0);
+        b.setMinHeight(0);
+        return b;
     }
 
     private MaterialButton iconButton(Context c, String glyph, String description, int size) {
