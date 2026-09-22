@@ -21,11 +21,20 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import okio.BufferedSource;
 
-/** Gemini REST client with dynamic model discovery, health check validation, SSE streaming, usage telemetry, and fallback signals. */
+/**
+ * Gemini REST client: dynamic model discovery, health check validation, native multi turn
+ * conversations with a system instruction, SSE streaming, usage telemetry, truncation signals
+ * for seamless continuation, and fallback hints for silent model routing.
+ */
 public final class GeminiAutoClient {
     private static final String ROOT = "https://generativelanguage.googleapis.com/v1beta/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-    private final OkHttpClient http = new OkHttpClient.Builder().callTimeout(Duration.ofSeconds(90)).build();
+    public static final int MAX_OUTPUT_TOKENS = 8192;
+
+    private final OkHttpClient http = new OkHttpClient.Builder()
+            .callTimeout(Duration.ofSeconds(180))
+            .readTimeout(Duration.ofSeconds(180))
+            .build();
 
     public interface Listener {
         void onModels(List<ModelInfo> models, String remaining, String retryAfter);
@@ -34,8 +43,27 @@ public final class GeminiAutoClient {
         void onError(int status, String message, String remaining, String retryAfter);
     }
 
+    /** Optional extension: notified when the model stopped only because it hit the output cap. */
+    public interface StreamListener extends Listener {
+        void onTruncated(String model, Usage usage, String remaining, String retryAfter);
+    }
+
     public interface ValidateModelsCallback {
         void onValidated(List<String> validActiveModels);
+    }
+
+    /** One conversation turn. Role is either "user" or "model". */
+    public static final class Turn {
+        public final String role;
+        public final String text;
+
+        public Turn(String role, String text) {
+            this.role = "model".equals(role) || "assistant".equals(role) ? "model" : "user";
+            this.text = text == null ? "" : text;
+        }
+
+        public static Turn user(String text) { return new Turn("user", text); }
+        public static Turn model(String text) { return new Turn("model", text); }
     }
 
     public static final class ModelInfo {
@@ -122,8 +150,8 @@ public final class GeminiAutoClient {
     }
 
     /**
-     * Probes candidate models against the real-time Gemini server with a lightweight health check ping.
-     * Only returns models that respond with HTTP 200 / successful JSON.
+     * Probes candidate models against the real time Gemini server with a lightweight health
+     * check ping. Only models that answer with HTTP 200 and a real candidate survive.
      */
     public void validateActiveModels(String apiKey, List<String> candidateModels, ValidateModelsCallback callback) {
         if (candidateModels == null || candidateModels.isEmpty()) {
@@ -177,12 +205,54 @@ public final class GeminiAutoClient {
         }
     }
 
+    /** Legacy single prompt streaming, kept for the classic agent screen. */
     public void stream(String apiKey, String model, String prompt, Listener listener) {
+        List<Turn> turns = new ArrayList<>();
+        turns.add(Turn.user(prompt));
+        streamConversation(apiKey, model, "", turns, MAX_OUTPUT_TOKENS, listener);
+    }
+
+    /**
+     * Streams a full conversation. The system instruction is sent natively when the model
+     * supports it, and transparently merged into the first user turn when it does not, so no
+     * request is ever lost to a legacy model.
+     */
+    public void streamConversation(String apiKey, String model, String systemInstruction, List<Turn> turns, int maxTokens, Listener listener) {
+        boolean useSystem = systemInstruction != null && !systemInstruction.trim().isEmpty();
+        dispatch(apiKey, model, systemInstruction, turns, maxTokens, useSystem, listener);
+    }
+
+    private void dispatch(String apiKey, String model, String systemInstruction, List<Turn> turns,
+                          int maxTokens, boolean nativeSystem, Listener listener) {
+        List<Turn> conversation = turns == null ? new ArrayList<>() : new ArrayList<>(turns);
+        if (conversation.isEmpty()) {
+            listener.onError(0, "Tidak ada instruksi untuk dikirim.", "", "");
+            return;
+        }
+
+        boolean hasSystem = systemInstruction != null && !systemInstruction.trim().isEmpty();
         JSONObject payload = new JSONObject();
-        int outputTokens = prompt != null && prompt.length() > 6000 ? 4096 : 2048;
         try {
-            payload.put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray().put(new JSONObject().put("text", prompt)))));
-            payload.put("generationConfig", new JSONObject().put("temperature", 0.4).put("maxOutputTokens", outputTokens));
+            JSONArray contents = new JSONArray();
+            for (int i = 0; i < conversation.size(); i++) {
+                Turn t = conversation.get(i);
+                String text = t.text;
+                if (hasSystem && !nativeSystem && i == 0) {
+                    text = systemInstruction.trim() + "\n\n---\n\n" + text;
+                }
+                contents.put(new JSONObject()
+                        .put("role", t.role)
+                        .put("parts", new JSONArray().put(new JSONObject().put("text", text))));
+            }
+            payload.put("contents", contents);
+            if (hasSystem && nativeSystem) {
+                payload.put("systemInstruction", new JSONObject()
+                        .put("parts", new JSONArray().put(new JSONObject().put("text", systemInstruction.trim()))));
+            }
+            payload.put("generationConfig", new JSONObject()
+                    .put("temperature", 0.35)
+                    .put("topP", 0.95)
+                    .put("maxOutputTokens", maxTokens <= 0 ? MAX_OUTPUT_TOKENS : maxTokens));
         } catch (Exception e) {
             listener.onError(0, message(e), "", "");
             return;
@@ -202,16 +272,22 @@ public final class GeminiAutoClient {
                 String remaining = extractRate(response);
                 String retry = response.header("retry-after", "");
                 if (!response.isSuccessful()) {
+                    int code = response.code();
+                    String body = "";
                     try (Response ignored = response) {
-                        String body = ignored.body() == null ? "" : ignored.body().string();
-                        listener.onError(ignored.code(), error(body, ignored.code()), remaining, retry);
-                    } catch (IOException e) {
-                        listener.onError(500, error(e.getMessage(), 500), remaining, retry);
+                        body = ignored.body() == null ? "" : ignored.body().string();
+                    } catch (IOException ignored) { }
+                    // Older models reject systemInstruction: retry once with it merged inline.
+                    if (code == 400 && hasSystem && nativeSystem) {
+                        dispatch(apiKey, model, systemInstruction, conversation, maxTokens, false, listener);
+                        return;
                     }
+                    listener.onError(code, error(body, code), remaining, retry);
                     return;
                 }
 
-                Usage[] usage = {new Usage(0, 0, 0)};
+                Usage usage = new Usage(0, 0, 0);
+                String finishReason = "";
                 boolean hasEmitted = false;
                 try (Response ignored = response) {
                     BufferedSource source = ignored.body().source();
@@ -223,34 +299,54 @@ public final class GeminiAutoClient {
                         JSONObject root = new JSONObject(json);
                         JSONArray candidates = root.optJSONArray("candidates");
                         if (candidates != null && candidates.length() > 0) {
-                            JSONObject content = candidates.optJSONObject(0);
-                            JSONObject c = content == null ? null : content.optJSONObject("content");
-                            JSONArray parts = c == null ? null : c.optJSONArray("parts");
-                            if (parts != null) {
-                                for (int i = 0; i < parts.length(); i++) {
-                                    String delta = parts.optJSONObject(i) == null ? "" : parts.optJSONObject(i).optString("text", "");
-                                    if (!delta.isEmpty()) {
-                                        hasEmitted = true;
-                                        listener.onDelta(delta);
+                            JSONObject first = candidates.optJSONObject(0);
+                            if (first != null) {
+                                String reason = first.optString("finishReason", "");
+                                if (!reason.isEmpty()) finishReason = reason;
+                                JSONObject c = first.optJSONObject("content");
+                                JSONArray parts = c == null ? null : c.optJSONArray("parts");
+                                if (parts != null) {
+                                    for (int i = 0; i < parts.length(); i++) {
+                                        JSONObject part = parts.optJSONObject(i);
+                                        String delta = part == null ? "" : part.optString("text", "");
+                                        if (!delta.isEmpty()) {
+                                            hasEmitted = true;
+                                            listener.onDelta(delta);
+                                        }
                                     }
                                 }
                             }
                         }
                         JSONObject u = root.optJSONObject("usageMetadata");
                         if (u != null) {
-                            usage[0] = new Usage(u.optInt("promptTokenCount"), u.optInt("candidatesTokenCount"), u.optInt("totalTokenCount"));
+                            usage = new Usage(u.optInt("promptTokenCount"), u.optInt("candidatesTokenCount"), u.optInt("totalTokenCount"));
                         }
                     }
+
                     if (!hasEmitted) {
                         listener.onError(204, "Tidak ada respon teks dari model " + model, remaining, retry);
+                        return;
+                    }
+                    if ("MAX_TOKENS".equalsIgnoreCase(finishReason) && listener instanceof StreamListener) {
+                        ((StreamListener) listener).onTruncated(model, usage, remaining, retry);
                     } else {
-                        listener.onComplete(model, usage[0], remaining, retry);
+                        listener.onComplete(model, usage, remaining, retry);
                     }
                 } catch (Exception e) {
-                    listener.onError(0, message(e), remaining, retry);
+                    if (hasEmitted) {
+                        listener.onComplete(model, usage, remaining, retry);
+                    } else {
+                        listener.onError(0, message(e), remaining, retry);
+                    }
                 }
             }
         });
+    }
+
+    /** True when the failure is worth retrying on another model or key. */
+    public static boolean retryable(int status) {
+        return status == 0 || status == 204 || status == 400 || status == 403 || status == 404
+                || status == 429 || status == 500 || status == 503 || status == 504;
     }
 
     private static String extractRate(Response response) {
@@ -290,6 +386,9 @@ public final class GeminiAutoClient {
                     }
                     if (status == 404 || "NOT_FOUND".equalsIgnoreCase(stat)) {
                         return "Model tidak ditemukan (HTTP 404): " + msg;
+                    }
+                    if (status == 503 || "UNAVAILABLE".equalsIgnoreCase(stat)) {
+                        return "Server model sedang penuh (HTTP 503): " + msg;
                     }
                     return msg + " (HTTP " + status + ")";
                 }
