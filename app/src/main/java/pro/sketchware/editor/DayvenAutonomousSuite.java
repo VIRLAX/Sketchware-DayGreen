@@ -28,7 +28,7 @@ import pro.sketchware.utility.FilePathUtil;
  * 6. ManifestPermissionsIntegrator: Auto-scans API calls (Camera, Location, Storage, Bluetooth) and auto-injects AndroidManifest permissions.
  * 7. MemoryLeakDetector: Detects leaking static context, unclosed SQLite cursors, unbound BroadcastReceivers, and uncancelled Coroutines/Threads.
  * 8. RealtimeDiffPatcher: Computes git-like unified diff hunks (LCS algorithm) allowing surgical line-by-line patch application.
- * 9. CustomBlockBeanSynthesizer: Two-way bridge between Java methods and Sketchware visual blocks (`BlockBean`).
+ * 9. CustomBlockBeanSynthesizer: Two-way bridge between Java methods and Sketchware visual blocks (BlockBean).
  * 10. MultiModuleArchitecturePlanner: Scaffolds clean architecture packages (data, domain, presentation, di, model).
  * 11. SQLiteRoomSchemaGenerator: Generates SQLite helpers, Room entities, DAOs, and database migrations from plain text models.
  * 12. RetrofitApiContractBuilder: Transforms cURL, Postman, or JSON response payloads into Retrofit interfaces and POJO models.
@@ -36,7 +36,7 @@ import pro.sketchware.utility.FilePathUtil;
  * 14. PerformanceBenchmarkProfiler: Inspects UI draw hierarchy, overdraw hazards, and warns about main-thread blocking operations.
  * 15. ProguardR8RuleOptimizer: Auto-generates Proguard keep rules for reflection, GSON models, Retrofit adapters, and libraries.
  * 16. UnitTestCaseGenerator: Synthesizes JUnit4 and Mockito test classes for business logic methods.
- * 17. InternationalizationLocalizationManager: Audits hardcoded UI strings and compiles translations into `res/values-*/strings.xml`.
+ * 17. InternationalizationLocalizationManager: Audits hardcoded UI strings and compiles translations into res/values-*/strings.xml.
  * 18. AssetCompressionVectorConverter: Validates vector XML pathData and optimizes drawable resources.
  * 19. GradleBuildScriptAuditor: Audits build.gradle, targetSdkVersion, compileSdkVersion, and dependency version conflicts.
  * 20. SelfHealingCompileOrchestrator: Autonomous multi-pass error correction loop resolving unresolved symbols, missing imports, and type mismatches.
