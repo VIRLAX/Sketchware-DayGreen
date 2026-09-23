@@ -8,6 +8,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,14 +23,23 @@ import okhttp3.Response;
 import okio.BufferedSource;
 
 /**
- * Gemini REST client: dynamic model discovery, health check validation, native multi turn
- * conversations with a system instruction, SSE streaming, usage telemetry, truncation signals
- * for seamless continuation, and fallback hints for silent model routing.
+ * Gemini REST client: dynamic model discovery, health check validation, native multi-turn
+ * conversations with system instruction, SSE streaming, usage telemetry, truncation signals
+ * for seamless continuation, and robust high-demand / quota silent failover across model tiers.
  */
 public final class GeminiAutoClient {
     private static final String ROOT = "https://generativelanguage.googleapis.com/v1beta/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
     public static final int MAX_OUTPUT_TOKENS = 8192;
+
+    public static final List<String> FALLBACK_TIERS = Arrays.asList(
+            "gemini-3.6-flash",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro"
+    );
 
     private final OkHttpClient http = new OkHttpClient.Builder()
             .callTimeout(Duration.ofSeconds(180))
@@ -205,7 +215,7 @@ public final class GeminiAutoClient {
         }
     }
 
-    /** Legacy single prompt streaming, kept for the classic agent screen. */
+    /** Legacy single prompt streaming. */
     public void stream(String apiKey, String model, String prompt, Listener listener) {
         List<Turn> turns = new ArrayList<>();
         turns.add(Turn.user(prompt));
@@ -214,8 +224,7 @@ public final class GeminiAutoClient {
 
     /**
      * Streams a full conversation. The system instruction is sent natively when the model
-     * supports it, and transparently merged into the first user turn when it does not, so no
-     * request is ever lost to a legacy model.
+     * supports it, and transparently merged into the first user turn when it does not.
      */
     public void streamConversation(String apiKey, String model, String systemInstruction, List<Turn> turns, int maxTokens, Listener listener) {
         boolean useSystem = systemInstruction != null && !systemInstruction.trim().isEmpty();
@@ -349,6 +358,15 @@ public final class GeminiAutoClient {
                 || status == 429 || status == 500 || status == 503 || status == 504;
     }
 
+    /** Checks whether error string indicates high demand / resource exhausted. */
+    public static boolean isHighDemandOrQuotaError(String errorMsg) {
+        if (errorMsg == null) return false;
+        String lower = errorMsg.toLowerCase(Locale.US);
+        return lower.contains("high demand") || lower.contains("resource_exhausted")
+                || lower.contains("quota") || lower.contains("429") || lower.contains("503")
+                || lower.contains("rate limit") || lower.contains("overloaded");
+    }
+
     private static String extractRate(Response response) {
         String r = response.header("x-ratelimit-remaining", "");
         if (r == null || r.isEmpty()) r = response.header("x-ratelimit-remaining-requests", "");
@@ -388,7 +406,7 @@ public final class GeminiAutoClient {
                         return "Model tidak ditemukan (HTTP 404): " + msg;
                     }
                     if (status == 503 || "UNAVAILABLE".equalsIgnoreCase(stat)) {
-                        return "Server model sedang penuh (HTTP 503): " + msg;
+                        return "Server model sedang high demand / penuh (HTTP 503): " + msg;
                     }
                     return msg + " (HTTP " + status + ")";
                 }
