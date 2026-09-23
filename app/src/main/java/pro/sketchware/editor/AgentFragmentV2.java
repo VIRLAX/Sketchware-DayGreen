@@ -81,6 +81,7 @@ import pro.sketchware.utility.XmlSyncHelper;
  * - ChatGPT-style code blocks with language indicators and one-tap copy button.
  * - Project profile drawer showing App Name & custom icon with long-press permanent deletion of chat history.
  * - 6-tool developer settings menu.
+ * - 1-Tap Crash Interceptor Banner directly analyzing last build/runtime errors.
  */
 public final class AgentFragmentV2 extends Fragment {
     // Premium dark & high contrast palette
@@ -278,9 +279,40 @@ public final class AgentFragmentV2 extends Fragment {
         };
         root.getViewTreeObserver().addOnGlobalLayoutListener(keyboardLayoutListener);
 
+        checkAndShowRecentCrashBanner();
         restoreSession();
         applyTopInset();
         return root;
+    }
+
+    private void checkAndShowRecentCrashBanner() {
+        if (projectId == null || projectId.isEmpty()) return;
+        String err = DayvenAdvancedEngine.CrashInterceptor.captureLastCrashOrCompileError(projectId);
+        if (err != null && !err.isEmpty()) {
+            final LinearLayout banner = row(requireContext());
+            banner.setGravity(Gravity.CENTER_VERTICAL);
+            banner.setPadding(dp(12), dp(8), dp(12), dp(8));
+            banner.setBackground(round(0x33FF453A, 10));
+
+            TextView tv = label(requireContext(), "⚠ Terdeteksi error build/compile terakhir", 11, true);
+            tv.setTextColor(IOS_RED);
+            banner.addView(tv, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            MaterialButton fixBtn = solidButton("Auto Fix");
+            fixBtn.setBackgroundTintList(ColorStateList.valueOf(IOS_RED));
+            fixBtn.setTextSize(10);
+            fixBtn.setOnClickListener(v -> {
+                bounce(v);
+                composer.setText(DayvenAdvancedEngine.CrashInterceptor.formatDiagnosticPrompt(err));
+                send();
+                messages.removeView(banner);
+            });
+            banner.addView(fixBtn, new LinearLayout.LayoutParams(-2, dp(32)));
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(0, 0, 0, dp(8));
+            messages.addView(banner, 0, lp);
+        }
     }
 
     private void applyTopInset() {
@@ -1629,6 +1661,7 @@ public final class AgentFragmentV2 extends Fragment {
                 + "• Claude-style Steps: Collapsible shell accordion\n"
                 + "• Visual Editor Sync: Real-time ViewBean auto-sync\n"
                 + "• Snapshot Rollback: " + memoryDepth + " batch tersimpan\n"
+                + "• Crash Interceptor: Logcat auto-detect & 1-tap fix\n"
                 + "• Snapshot Terakhir: " + (label == null ? "Belum ada" : label);
 
         new MaterialAlertDialogBuilder(requireContext())
