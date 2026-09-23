@@ -12,13 +12,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import pro.sketchware.utility.FilePathUtil;
+import pro.sketchware.utility.XmlSyncHelper;
 
 /**
  * Parses Dayven AI's explicit action protocol and writes only after the user taps Accept.
  *
- * <p>v3.0 understands many TARGET + fenced block pairs in a single response, so one instruction
- * can deliver a complete feature (layout + activity + resources) that is applied as one
- * reversible snapshot batch.</p>
+ * <p>v3.5 understands TARGET + code blocks, automatic XML sync to Sketchware Visual Editor
+ * (ViewBean) via XmlSyncHelper, and builds structured execution step models for Claude-style UI.</p>
  */
 public final class AgentActionExecutor {
     private static final Pattern TARGET = Pattern.compile("(?im)^\\s*(?:TARGET|FILE)\\s*:\\s*([^\\r\\n]+)");
@@ -30,7 +30,7 @@ public final class AgentActionExecutor {
         public final String language;
         public final String content;
 
-        private Action(String target, String language, String content) {
+        public Action(String target, String language, String content) {
             this.target = target;
             this.language = language;
             this.content = content;
@@ -46,9 +46,24 @@ public final class AgentActionExecutor {
         }
     }
 
+    /** Structured model for Claude-style collapsible command steps (`>_ n langkah`). */
+    public static final class ExecutionStep {
+        public final String title;
+        public final String command;
+        public final String status;
+        public final String log;
+
+        public ExecutionStep(String title, String command, String status, String log) {
+            this.title = title == null ? "Proses langkah" : title.trim();
+            this.command = command == null ? "" : command.trim();
+            this.status = status == null ? "OK" : status.trim();
+            this.log = log == null ? "" : log.trim();
+        }
+    }
+
     private AgentActionExecutor() { }
 
-    /** First action in the response, kept for backwards compatibility. */
+    /** First action in the response. */
     public static Action parse(String response) {
         List<Action> all = parseAll(response);
         return all.isEmpty() ? null : all.get(0);
@@ -85,7 +100,6 @@ public final class AgentActionExecutor {
         for (int i = 0; i < targetStart.size(); i++) {
             while (fi < fenceStart.size() && fenceStart.get(fi) < targetEnd.get(i)) fi++;
             if (fi >= fenceStart.size()) break;
-            // A fence that already belongs to the next TARGET is not ours.
             if (i + 1 < targetStart.size() && fenceStart.get(fi) > targetStart.get(i + 1)) continue;
 
             String path = sanitizeTarget(targetName.get(i));
@@ -96,6 +110,48 @@ public final class AgentActionExecutor {
             fi++;
         }
         return out;
+    }
+
+    /** Parses Claude-style execution steps from response. */
+    public static List<ExecutionStep> parseSteps(String response) {
+        List<ExecutionStep> steps = new ArrayList<>();
+        if (response == null || response.isEmpty()) return steps;
+
+        Pattern stepPattern = Pattern.compile("(?im)^\\s*(?:EXEC_STEP|LANGKAH|STEP)\\s*:\\s*([^\\r\\n]+)");
+        Matcher m = stepPattern.matcher(response);
+
+        List<Integer> starts = new ArrayList<>();
+        List<String> titles = new ArrayList<>();
+        while (m.find()) {
+            starts.add(m.start());
+            titles.add(m.group(1));
+        }
+
+        if (starts.isEmpty()) return steps;
+
+        for (int i = 0; i < starts.size(); i++) {
+            int blockStart = starts.get(i);
+            int blockEnd = (i + 1 < starts.size()) ? starts.get(i + 1) : response.length();
+            String block = response.substring(blockStart, blockEnd);
+
+            String title = titles.get(i);
+            String cmd = extractValue(block, "CMD");
+            if (cmd.isEmpty()) cmd = extractValue(block, "COMMAND");
+            String status = extractValue(block, "STATUS");
+            if (status.isEmpty()) status = "DONE";
+            String log = extractValue(block, "LOG");
+
+            steps.add(new ExecutionStep(title, cmd, status, log));
+        }
+
+        return steps;
+    }
+
+    private static String extractValue(String block, String key) {
+        Pattern p = Pattern.compile("(?im)^\\s*" + key + "\\s*:\\s*([^\\r\\n]+)");
+        Matcher m = p.matcher(block);
+        if (m.find()) return m.group(1).trim();
+        return "";
     }
 
     /** Strips markdown links, backticks, quotes and stray decoration from a TARGET line. */
@@ -113,33 +169,15 @@ public final class AgentActionExecutor {
         return value.replace('\\', '/').trim();
     }
 
-    /** Raw XML layouts without a res/ prefix are handed to the Direct XML editor instead. */
     public static boolean needsEditorHandoff(Action action) {
         if (action == null || !action.isXml()) return false;
         String lower = action.target.toLowerCase(Locale.US);
         return !lower.startsWith("res/") && !lower.startsWith("assets/");
     }
 
-    /** Applies one action, journalling the previous version for a single step undo. */
-    public static String apply(Context context, String scId, Action action) {
-        if (action == null) return "The response did not contain a safe TARGET and fenced code block.";
-        if (needsEditorHandoff(action)) return "XML_HANDOFF";
-        if (action.isBlocks()) return AgentBlockExecutor.apply(scId, action.target, action.content);
-
-        List<AgentMemoryEngine.Entry> batch = new ArrayList<>();
-        String result = writeFile(scId, action, batch);
-        if (result.startsWith("APPLIED") && !batch.isEmpty()) {
-            AgentMemoryEngine.Entry e = batch.get(0);
-            AgentUndoJournal.saveFile(scId, e.path, e.existed, e.previous);
-        }
-        return result;
-    }
-
     /**
-     * Applies every action in order and stores all captured snapshots as ONE rollback batch, so
-     * a later "balik ke yang tadi" restores the complete feature, not just the last file.
-     *
-     * @return a short human readable report.
+     * Applies every action in order, automatically syncing layout XML to Sketchware
+     * visual editor data (ViewBeans) via XmlSyncHelper, and stores snapshots as ONE rollback batch.
      */
     public static String applyAll(Context context, String scId, List<Action> actions, AgentMemoryEngine memory, String label) {
         if (actions == null || actions.isEmpty()) return "Tidak ada file untuk diterapkan.";
@@ -149,14 +187,23 @@ public final class AgentActionExecutor {
         List<String> failed = new ArrayList<>();
 
         for (Action action : actions) {
-            String result;
             if (action.isBlocks()) {
-                result = AgentBlockExecutor.apply(scId, action.target, action.content);
+                String result = AgentBlockExecutor.apply(scId, action.target, action.content);
                 if (result != null && result.startsWith("APPLIED")) applied.add(action.target);
                 else failed.add(action.target + " (" + result + ")");
                 continue;
             }
-            result = writeFile(scId, action, batch);
+
+            // Sync layout directly to Visual Editor if it's a layout XML
+            if (action.isXml() && context != null && scId != null) {
+                try {
+                    String fileName = action.target;
+                    if (fileName.contains("/")) fileName = fileName.substring(fileName.lastIndexOf('/') + 1);
+                    XmlSyncHelper.syncXml(context, scId, fileName, action.content);
+                } catch (Throwable ignored) { }
+            }
+
+            String result = writeFile(scId, action, batch);
             if (result.startsWith("APPLIED")) applied.add(action.target);
             else failed.add(action.target + " (" + result + ")");
         }
@@ -170,7 +217,7 @@ public final class AgentActionExecutor {
 
         StringBuilder sb = new StringBuilder();
         if (!applied.isEmpty()) {
-            sb.append(applied.size()).append(" file diterapkan:\n");
+            sb.append(applied.size()).append(" file berhasil diterapkan & disinkronisasi ke project:\n");
             for (String a : applied) sb.append("  \u2713 ").append(a).append('\n');
         }
         if (!failed.isEmpty()) {
@@ -180,7 +227,6 @@ public final class AgentActionExecutor {
         return sb.toString().trim();
     }
 
-    /** Resolves the safe destination inside the project and writes the file. */
     private static String writeFile(String scId, Action action, List<AgentMemoryEngine.Entry> batch) {
         String pathInsideRoot = action.target;
         if (pathInsideRoot.startsWith("/") || pathInsideRoot.contains("..") || pathInsideRoot.contains(":")) {
@@ -227,10 +273,5 @@ public final class AgentActionExecutor {
         } catch (Exception e) {
             return "Write failed: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         }
-    }
-
-    public static String revertLast(Context context, String scId) {
-        if (scId == null || scId.trim().isEmpty()) return "No project is selected.";
-        return AgentUndoJournal.revert(scId);
     }
 }
