@@ -36,7 +36,7 @@ import pro.sketchware.utility.FilePathUtil;
  * 14. PerformanceBenchmarkProfiler: Inspects UI draw hierarchy, overdraw hazards, and warns about main-thread blocking operations.
  * 15. ProguardR8RuleOptimizer: Auto-generates Proguard keep rules for reflection, GSON models, Retrofit adapters, and libraries.
  * 16. UnitTestCaseGenerator: Synthesizes JUnit4 and Mockito test classes for business logic methods.
- * 17. InternationalizationLocalizationManager: Audits hardcoded UI strings and compiles translations into res/values-*/strings.xml.
+ * 17. InternationalizationLocalizationManager: Audits hardcoded UI strings and compiles translations into res/values/strings.xml.
  * 18. AssetCompressionVectorConverter: Validates vector XML pathData and optimizes drawable resources.
  * 19. GradleBuildScriptAuditor: Audits build.gradle, targetSdkVersion, compileSdkVersion, and dependency version conflicts.
  * 20. SelfHealingCompileOrchestrator: Autonomous multi-pass error correction loop resolving unresolved symbols, missing imports, and type mismatches.
@@ -303,7 +303,7 @@ public final class DayvenAutonomousSuite {
         }
     }
 
-    /** 20. Self-Healing Compile Orchestrator */
+    /** 20. SelfHealingCompileOrchestrator */
     public static final class SelfHealingOrchestrator {
         public static String suggestSelfHealingFix(String compilerError) {
             if (compilerError == null) return "";
