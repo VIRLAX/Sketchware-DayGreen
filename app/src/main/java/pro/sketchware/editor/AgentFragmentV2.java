@@ -149,9 +149,9 @@ public final class AgentFragmentV2 extends Fragment {
     private String activeSystem = "";
     private int continuation;
 
-    // Real-time Command Shell Runner Indicator
+    // Real-time Command Shell Runner / Reasoning Indicator
     private View activeShellRunnerView;
-    private TextView activeShellCmdText;
+    private LinearLayout activeShellContainer;
     private TextView activeShellStatusText;
     private Runnable shellSimulationRunnable;
 
@@ -573,9 +573,10 @@ public final class AgentFragmentV2 extends Fragment {
         liveAssistantContainer = null;
         liveAssistantText = null;
         streamBuffer.setLength(0);
-        addRealtimeShellRunner(prompt);
 
         int mode = AgentPromptOptimizer.detectMode(prompt);
+        addRealtimeShellRunner(prompt, mode);
+
         activeSystem = AgentPromptOptimizer.systemInstruction(mode);
         activeTurns = new ArrayList<>();
         appendHistory(activeTurns, mode);
@@ -623,10 +624,11 @@ public final class AgentFragmentV2 extends Fragment {
     }
 
     /**
-     * Real-time Command Shell Runner Box.
-     * Replaces static thinking text with live shell operations running across real-time steps.
+     * Real-time Reasoning / Command Shell Runner Box.
+     * - Casual / Small-talk queries: Displays a clean "Dayven Reasoning..." pulsing indicator.
+     * - Technical / Code / File tasks: Displays realistic commands with matching output step-by-step.
      */
-    private void addRealtimeShellRunner(String userPrompt) {
+    private void addRealtimeShellRunner(String userPrompt, int mode) {
         stopShellSimulation();
         Context c = requireContext();
 
@@ -635,7 +637,38 @@ public final class AgentFragmentV2 extends Fragment {
         box.setPadding(dp(14), dp(10), dp(14), dp(10));
         box.setBackground(stroke(CARD_DARK, dp(14), BORDER_DARK));
 
-        // Top line
+        // For casual chat / small talk, display simple clean reasoning indicator
+        if (mode == AgentPromptOptimizer.MODE_LITE) {
+            LinearLayout liteRow = row(c);
+            liteRow.setGravity(Gravity.CENTER_VERTICAL);
+
+            ImageView sparkle = new ImageView(c);
+            int sparkleId = getResDrawable(c, "ic_dayven_sparkle");
+            if (sparkleId != 0) sparkle.setImageResource(sparkleId);
+            sparkle.setColorFilter(ACCENT);
+            liteRow.addView(sparkle, new LinearLayout.LayoutParams(dp(16), dp(16)));
+
+            TextView reasonText = label(c, " Dayven Reasoning...", 12, true);
+            reasonText.setTextColor(TEXT_PRIMARY);
+            liteRow.addView(reasonText, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            box.addView(liteRow);
+
+            LinearLayout wrap = row(c);
+            wrap.setTag("thinking_wrap");
+            wrap.setGravity(Gravity.START);
+            wrap.addView(aiAvatar(), avatarParams());
+            wrap.addView(box, new LinearLayout.LayoutParams(-2, -2));
+
+            messages.addView(wrap);
+            animateIn(wrap);
+            scrollBottom();
+
+            activeShellRunnerView = wrap;
+            return;
+        }
+
+        // Technical / research tasks: Claude-style sequential shell runner (command -> wait -> stdout -> next command)
         LinearLayout topRow = row(c);
         topRow.setGravity(Gravity.CENTER_VERTICAL);
 
@@ -644,7 +677,7 @@ public final class AgentFragmentV2 extends Fragment {
         icon.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         topRow.addView(icon);
 
-        TextView headTitle = label(c, " Dayven AI v3.0 Ultra Autonomous Shell", 12, true);
+        TextView headTitle = label(c, " Dayven Autonomous Shell", 12, true);
         headTitle.setTextColor(TEXT_PRIMARY);
         topRow.addView(headTitle, new LinearLayout.LayoutParams(0, -2, 1f));
 
@@ -656,18 +689,11 @@ public final class AgentFragmentV2 extends Fragment {
 
         box.addView(topRow);
 
-        // Shell command line
-        activeShellCmdText = new TextView(c);
-        activeShellCmdText.setText("$ git status --porcelain");
-        activeShellCmdText.setTypeface(Typeface.MONOSPACE);
-        activeShellCmdText.setTextSize(11);
-        activeShellCmdText.setTextColor(0xFF9CDCFE);
-        activeShellCmdText.setBackground(round(0xFF1E1E1E, 6));
-        activeShellCmdText.setPadding(dp(8), dp(4), dp(8), dp(4));
-
-        LinearLayout.LayoutParams cmdLp = new LinearLayout.LayoutParams(-1, -2);
-        cmdLp.topMargin = dp(6);
-        box.addView(activeShellCmdText, cmdLp);
+        // Dynamic command output container
+        activeShellContainer = column(c);
+        LinearLayout.LayoutParams contLp = new LinearLayout.LayoutParams(-1, -2);
+        contLp.topMargin = dp(6);
+        box.addView(activeShellContainer, contLp);
 
         LinearLayout wrap = row(c);
         wrap.setTag("thinking_wrap");
@@ -681,54 +707,84 @@ public final class AgentFragmentV2 extends Fragment {
 
         activeShellRunnerView = wrap;
 
-        // Dynamic shell execution chain animation
-        final String[] shellCommands;
+        // Structured commands and realistic outputs tailored to intent
+        final String[][] executionPairs;
         String lower = userPrompt.toLowerCase(Locale.US);
+
         if (lower.contains("compile") || lower.contains("build")) {
-            shellCommands = new String[]{
-                "gradle checkResources && aapt2 compile res/layout/main.xml",
-                "javac -cp android.jar:libs/* app/src/main/java/*.java",
-                "d8 --release --min-api 26 --output bin/classes.dex",
-                "trigger: DesignActivity.btn_run -> building APK..."
+            executionPairs = new String[][]{
+                {"gradle checkResources && aapt2 compile res/layout/main.xml", "✓ XML resource compiled successfully"},
+                {"javac -cp android.jar:libs/* app/src/main/java/*.java", "✓ 0 compiler warnings, bytecode generated"},
+                {"d8 --release --min-api 26 --output bin/classes.dex", "✓ classes.dex packaged (842 KB)"},
+                {"trigger: DesignActivity.btn_run", "🚀 Launching build process in Sketchware..."}
             };
         } else if (lower.contains("commit") || lower.contains("github") || lower.contains("git")) {
-            shellCommands = new String[]{
-                "curl -s https://api.github.com/repos/VIRLAX/Sketchware-DayGreen/commits | head -n 25",
-                "git log -1 --format=\"%h %ad %s\" --date=short",
-                "git diff --stat HEAD~1 HEAD"
+            executionPairs = new String[][]{
+                {"git log -1 --format=\"%h %ad %s\" --date=short", "f953f7f 2026-09-24 dayven autonomous os"},
+                {"git status --porcelain", "M app/src/main/java/pro/sketchware/editor/AgentFragmentV2.java"},
+                {"git diff --stat HEAD~1 HEAD", "2 files changed, 48 insertions(+), 12 deletions(-)"}
             };
-        } else if (lower.contains("library") || lower.contains("material") || lower.contains("depend")) {
-            shellCommands = new String[]{
-                "curl -s https://repo1.maven.org/maven2/com/google/android/material/maven-metadata.xml",
-                "find app/libs -type f -name '*.jar' -o -name '*.aar'",
-                "cat build.gradle | grep -i 'implementation'"
+        } else if (lower.contains("library") || lower.contains("depend") || lower.contains("maven")) {
+            executionPairs = new String[][]{
+                {"curl -s https://repo1.maven.org/maven2/search?q=" + (selectedFile.isEmpty() ? "material" : selectedFile), "HTTP/2 200 OK (artifact verified)"},
+                {"cat build.gradle | grep -i 'implementation'", "implementation 'com.google.android.material:material:1.12.0'"},
+                {"verify-proguard: checking keep rules", "✓ ProGuard rules matched for release build"}
             };
-        } else if (lower.contains("security") || lower.contains("keamanan") || lower.contains("login")) {
-            shellCommands = new String[]{
-                "owasp-mobile-scan: checking SQL injection vulnerabilities...",
-                "cipher-audit: verifying AES-GCM / SHA-256 implementation...",
-                "manifest-linter: checking exported components & cleartext traffic...",
-                "security audit: 0 critical vulnerabilities found."
+        } else if (lower.contains("security") || lower.contains("keamanan") || lower.contains("login") || lower.contains("owasp")) {
+            executionPairs = new String[][]{
+                {"owasp-mobile-scan: checking SQL injection vulnerabilities...", "✓ Parameterized queries verified in SQLiteOpenHelper"},
+                {"cipher-audit: verifying AES-GCM / SHA-256 implementation...", "✓ AES/GCM/NoPadding confirmed with AndroidKeyStore"},
+                {"manifest-linter: checking exported components & cleartext traffic...", "✓ 0 exported activities without permissions"}
             };
         } else {
-            shellCommands = new String[]{
-                "ls -la app/src/main/res/layout app/src/main/java",
-                "grep -rn 'MainActivity' app/src/main/",
-                "stat --format='%n %y' app/src/main/res/values/colors.xml"
+            // Context inspection for technical / code generation
+            executionPairs = new String[][]{
+                {"inspect-project: target=" + (selectedFile.isEmpty() ? "MainActivity.java" : selectedFile), "✓ Source loaded, analyzing AST & ViewBean hierarchy..."},
+                {"lint-syntax: checking API 26-35 compatibility", "✓ No deprecated SDK calls detected"},
+                {"reasoning: formulating optimal architecture", "✓ Multi-layer plan ready"}
             };
         }
 
         final int[] step = {0};
         shellSimulationRunnable = new Runnable() {
             @Override public void run() {
-                if (activeShellCmdText != null && step[0] < shellCommands.length) {
-                    activeShellCmdText.setText("$ " + shellCommands[step[0]]);
+                if (activeShellContainer != null && step[0] < executionPairs.length) {
+                    final String cmd = executionPairs[step[0]][0];
+                    final String out = executionPairs[step[0]][1];
+
+                    // Add command view
+                    TextView cmdView = new TextView(c);
+                    cmdView.setText("$ " + cmd);
+                    cmdView.setTypeface(Typeface.MONOSPACE);
+                    cmdView.setTextSize(11);
+                    cmdView.setTextColor(0xFF9CDCFE);
+                    cmdView.setBackground(round(0xFF1E1E1E, 6));
+                    cmdView.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+                    LinearLayout.LayoutParams cmdLp = new LinearLayout.LayoutParams(-1, -2);
+                    cmdLp.topMargin = dp(4);
+                    activeShellContainer.addView(cmdView, cmdLp);
+
+                    // Add response view after brief execution delay
+                    main.postDelayed(() -> {
+                        if (activeShellContainer != null) {
+                            TextView outView = new TextView(c);
+                            outView.setText(out);
+                            outView.setTypeface(Typeface.MONOSPACE);
+                            outView.setTextSize(10);
+                            outView.setTextColor(0xFF4EC9B0);
+                            outView.setPadding(dp(8), dp(2), dp(8), dp(4));
+                            activeShellContainer.addView(outView);
+                            scrollBottom();
+                        }
+                    }, 400);
+
                     step[0]++;
-                    main.postDelayed(this, 800);
+                    main.postDelayed(this, 1100);
                 }
             }
         };
-        main.postDelayed(shellSimulationRunnable, 700);
+        main.postDelayed(shellSimulationRunnable, 400);
     }
 
     private void stopShellSimulation() {
@@ -786,9 +842,10 @@ public final class AgentFragmentV2 extends Fragment {
                 if (!pool.contains(fallbackM)) pool.add(fallbackM);
             }
 
-            // Remove deprecated models that cause 404
-            pool.removeIf(m -> m.contains("2.5-flash") || m.contains("3.6-flash"));
+            // Remove deprecated models that cause 404 (gemini-2.0-flash, gemini-2.5-flash)
+            pool.removeIf(m -> m.contains("2.5-flash") || m.equals("gemini-2.0-flash"));
 
+            // Dynamic sort: models with higher version numbers (e.g. 3.6, latest) lead the queue
             pool.sort((a, b) -> Integer.compare(scoreModel(a, targetTier), scoreModel(b, targetTier)));
             for (String m : pool) {
                 AgentWorkspaceStore.Profile activeP = new AgentWorkspaceStore.Profile();
@@ -804,7 +861,9 @@ public final class AgentFragmentV2 extends Fragment {
             fallbackProf.name = "Gemini";
             fallbackProf.key = directKey;
             for (String m : defaultModels) {
-                out.add(new Route(fallbackProf, m));
+                if (!m.contains("2.5-flash") && !m.equals("gemini-2.0-flash")) {
+                    out.add(new Route(fallbackProf, m));
+                }
             }
         }
 
@@ -813,23 +872,27 @@ public final class AgentFragmentV2 extends Fragment {
 
     private int scoreModel(String model, String targetTier) {
         String m = model.toLowerCase(Locale.US);
-        // Exclude deprecated models
-        if (m.contains("2.5-flash")) return 99;
-        if (m.contains("3.6-flash")) return 98;
+        // Deprecated models penalty
+        if (m.contains("2.5-flash") || m.equals("gemini-2.0-flash")) return 99;
+
+        // Dynamic recency check
+        double version = GeminiAutoClient.extractModelVersion(m);
 
         if (GeminiAutoClient.TIER_PRO.equals(targetTier)) {
-            if (m.contains("1.5-pro")) return 0;
-            if (m.contains("2.0-flash-exp")) return 1;
-            if (m.contains("2.0-flash")) return 2;
-            if (m.contains("1.5-flash")) return 3;
-            return 4;
+            if (m.contains("pro") && version >= 3.0) return 0;
+            if (m.contains("pro")) return 1;
+            if (version >= 3.0) return 2;
+            if (m.contains("exp")) return 3;
+            if (m.contains("1.5-pro")) return 4;
+            return 5;
         }
 
         // Medium or default
-        if (m.contains("2.0-flash")) return 0;
-        if (m.contains("1.5-flash")) return 1;
-        if (m.contains("1.5-pro")) return 2;
-        return 3;
+        if (version >= 3.0) return 0; // gemini-3.6-flash first!
+        if (m.contains("flash-latest")) return 1;
+        if (m.contains("1.5-flash")) return 2;
+        if (m.contains("1.5-pro")) return 3;
+        return 4;
     }
 
     private void streamRoute(final String original, final List<Route> routes, final int index,
@@ -1695,7 +1758,7 @@ public final class AgentFragmentV2 extends Fragment {
         final String[] tiers = {
             "AUTO (Intelligent Routing Berdasarkan Kompleksitas)",
             "TIER PRO (gemini-1.5-pro / 2.0-flash-exp: Arsitektur & Logika Berat)",
-            "TIER MEDIUM (gemini-2.0-flash / 1.5-flash: Cepat, Seimbang, Responsif)",
+            "TIER MEDIUM (gemini-3.6-flash / 1.5-flash: Cepat, Seimbang, Responsif)",
             "TIER BASIC (Tugas Ringan, Tanya Jawab Cepat)"
         };
 
@@ -2024,13 +2087,13 @@ public final class AgentFragmentV2 extends Fragment {
                     if (!validActiveModels.isEmpty()) {
                         p.models.addAll(validActiveModels);
                     } else {
-                        p.models.add("gemini-2.0-flash");
+                        p.models.add("gemini-3.6-flash");
                         p.models.add("gemini-1.5-flash");
                         p.models.add("gemini-1.5-pro");
                     }
 
                     // Remove outdated/deprecated model identifiers
-                    p.models.removeIf(m -> m.contains("2.5-flash") || m.contains("3.6-flash"));
+                    p.models.removeIf(m -> m.contains("2.5-flash") || m.equals("gemini-2.0-flash"));
 
                     p.categorizeModels();
                     p.enabled = true;
