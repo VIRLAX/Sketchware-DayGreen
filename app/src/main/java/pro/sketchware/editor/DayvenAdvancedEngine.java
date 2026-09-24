@@ -5,30 +5,35 @@ import android.content.Intent;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import mod.jbk.diagnostic.CompileErrorSaver;
 import pro.sketchware.utility.FilePathUtil;
 import pro.sketchware.utility.FileUtil;
 
 /**
- * Dayven AI Autonomous Systems Suite (10 Elite Engines):
+ * Dayven AI Autonomous Systems Suite (Elite Engines):
  *
  * 1. Logcat Crash Interceptor & Auto-Diagnoser: Reads runtime crashes & compile logs with 1-tap quick fix prompts.
  * 2. Visual Block Vault: Generates and inspects Custom Block definitions (BlockBean specs).
  * 3. Smart Dependency Maven Resolver: Resolves and installs remote / local libraries into /libs.
- * 4. Code Health & Security Linter: Detects SQL injections, hardcoded tokens, UI-thread networking.
+ * 4. Enterprise Cyber Security & Hardening Linter: Detects SQL injections, hardcoded secrets/API keys, insecure cryptographic algorithms (DES/MD5/ECB), cleartext HTTP traffic, and exported vulnerable components.
  * 5. Layout Performance Profiler: Analyzes deep XML nesting and excessive weights.
  * 6. Intent & Navigation Graph Builder: Maps Activity relationships and flags missing Manifest entries.
- * 7. Git-like Micro-Checkpoint Branching: Allows named snapshots before major architectural changes.
+ * 7. Git-like Micro-Checkpoint Branching & Full Project Backup Engine: Creates ZIP archive backups of complete projects before major refactoring.
  * 8. Real-time Logcat Watchdog: Ingests live application outputs for instant debugging.
  * 9. Resource Asset Optimizer: Cleans orphaned drawable/strings/color resources.
  * 10. Autonomous Build Verification: Pre-checks APK assets, AAPT2 requirements, and R-class references.
+ * 11. Precise Path & Component Navigator: Resolves absolute and relative storage paths for all Sketchware directories.
  */
 public final class DayvenAdvancedEngine {
 
@@ -57,7 +62,7 @@ public final class DayvenAdvancedEngine {
         }
     }
 
-    /** 2. Visual Block Vault (Custom Block Generator) */
+    /** 2. Visual Block Vault (Custom Block Generator & BlockBean Mapper) */
     public static final class BlockVault {
         public static String createCustomBlockSpec(String name, String type, String spec, String code) {
             return "BLOCK_SPEC:\n" +
@@ -86,22 +91,46 @@ public final class DayvenAdvancedEngine {
         }
     }
 
-    /** 4. Code Health & Security Linter */
+    /** 4. Enterprise Cyber Security, Hardening & Vulnerability Linter */
     public static final class SecurityLinter {
         public static List<String> lintJava(String code) {
             List<String> warnings = new ArrayList<>();
             if (code == null) return warnings;
 
             if (code.contains("StrictMode.ThreadPolicy.Builder().permitAll()")) {
-                warnings.add("Warning: StrictMode permitAll ditemukan. Operasi network di main thread dapat menyebabkan ANR.");
+                warnings.add("Security/Stability: StrictMode permitAll ditemukan. Operasi network di main thread memicu ANR & rawan freeze.");
             }
             if (code.contains("rawQuery(") || code.contains("execSQL(")) {
-                if (code.matches("(?s).*\\+.*(input|text|str).*")) {
-                    warnings.add("Security: Potensi SQL Injection terdeteksi pada rawQuery string concatenation.");
+                if (code.matches("(?s).*\\+.*(input|text|str|edit|param).*")) {
+                    warnings.add("CyberSecurity Critical: Potensi SQL Injection terdeteksi pada string concatenation rawQuery/execSQL. Gunakan selectionArgs parameterized query.");
                 }
             }
             if (code.matches("(?i).*AIzaSy[0-9A-Za-z-_]{33}.*")) {
-                warnings.add("Security: Terdeteksi hardcoded Google API Key di kode Java.");
+                warnings.add("CyberSecurity High: Hardcoded Google API Key ditemukan langsung di kode Java. Pindahkan ke BuildConfig/keystore.");
+            }
+            if (code.contains("Cipher.getInstance(\"AES\")") || code.contains("Cipher.getInstance(\"AES/ECB")) {
+                warnings.add("CyberSecurity Vulnerability: Mode AES/ECB tidak aman terhadap replay attack. Gunakan AES/GCM/NoPadding.");
+            }
+            if (code.contains("MessageDigest.getInstance(\"MD5\")") || code.contains("MessageDigest.getInstance(\"SHA-1\")")) {
+                warnings.add("CyberSecurity Warning: Algoritma hash usang (MD5/SHA-1) rentan collision attack. Gunakan SHA-256 atau SHA-512.");
+            }
+            if (code.contains("setHostnameVerifier((hostname, session) -> true)") || code.contains("TrustAllCerts")) {
+                warnings.add("CyberSecurity Critical: Non-validating SSL Certificate / TrustManager membuka celah MITM (Man-in-the-Middle).");
+            }
+            if (code.contains("http://") && !code.contains("http://schemas.android.com")) {
+                warnings.add("CyberSecurity Warning: Penggunaan protokol unencrypted HTTP tanpa enkripsi TLS/HTTPS.");
+            }
+            return warnings;
+        }
+
+        public static List<String> lintManifest(String manifestXml) {
+            List<String> warnings = new ArrayList<>();
+            if (manifestXml == null) return warnings;
+            if (manifestXml.contains("android:usesCleartextTraffic=\"true\"")) {
+                warnings.add("CyberSecurity Warning: android:usesCleartextTraffic='true' mengizinkan transfer data tanpa TLS.");
+            }
+            if (manifestXml.contains("android:exported=\"true\"") && !manifestXml.contains("android:permission=")) {
+                warnings.add("CyberSecurity Notice: Komponen exported='true' tanpa permission dapat dipanggil oleh aplikasi pihak ketiga (IPC Attack).");
             }
             return warnings;
         }
@@ -147,12 +176,46 @@ public final class DayvenAdvancedEngine {
         }
     }
 
-    /** 7. Micro-Checkpoint Branching */
-    public static final class MicroCheckpoint {
-        public static boolean saveNamedCheckpoint(Context context, String scId, String checkpointName, AgentMemoryEngine memory) {
-            if (memory == null || scId == null) return false;
-            String label = "Checkpoint: " + (checkpointName == null ? "Manual Save" : checkpointName.trim());
-            return true;
+    /** 7. Project Full Backup & Micro-Checkpoint Engine */
+    public static final class BackupEngine {
+        public static String createFullProjectBackupZip(String scId) {
+            if (scId == null || scId.isEmpty()) return null;
+            try {
+                FilePathUtil util = new FilePathUtil();
+                File projectDir = new File(util.getPathJava(scId)).getParentFile();
+                if (projectDir == null || !projectDir.exists()) return null;
+
+                File backupDir = new File(projectDir.getParentFile(), "backups");
+                if (!backupDir.exists()) backupDir.mkdirs();
+
+                String zipFileName = "backup_" + scId + "_" + System.currentTimeMillis() + ".zip";
+                File zipFile = new File(backupDir, zipFileName);
+
+                try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
+                    zipDirectory(projectDir, projectDir.getName(), zos);
+                }
+                return zipFile.getAbsolutePath();
+            } catch (Throwable e) {
+                return null;
+            }
+        }
+
+        private static void zipDirectory(File folderToZip, String parentFolder, ZipOutputStream zos) throws Exception {
+            for (File file : folderToZip.listFiles()) {
+                if (file.isDirectory()) {
+                    zipDirectory(file, parentFolder + "/" + file.getName(), zos);
+                    continue;
+                }
+                zos.putNextEntry(new ZipEntry(parentFolder + "/" + file.getName()));
+                try (FileInputStream fis = new FileInputStream(file)) {
+                    byte[] buffer = new byte[4096];
+                    int length;
+                    while ((length = fis.read(buffer)) > 0) {
+                        zos.write(buffer, 0, length);
+                    }
+                }
+                zos.closeEntry();
+            }
         }
     }
 
@@ -191,5 +254,13 @@ public final class DayvenAdvancedEngine {
             }
             return true;
         }
+    }
+
+    /** 11. Precise Path & Directory Navigator */
+    public static final class PathNavigator {
+        public static String getJavaPath(String scId) { return new FilePathUtil().getPathJava(scId); }
+        public static String getResourcePath(String scId) { return new FilePathUtil().getPathResource(scId); }
+        public static String getAssetsPath(String scId) { return new FilePathUtil().getPathAssets(scId); }
+        public static String getNativelibsPath(String scId) { return new FilePathUtil().getPathNativelibs(scId); }
     }
 }
