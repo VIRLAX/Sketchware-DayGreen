@@ -7,12 +7,15 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 
-/** Device-scoped persistent storage for Gemini API profiles and chat sessions.
- * Stored cleanly in SharedPreferences with fallback so keys persist permanently across app restarts.
+/**
+ * Dayven Workspace Storage v3.8:
+ * Persistent storage for Gemini API profiles, multi-tier models, active tier modes (AUTO/PRO/MEDIUM/BASIC),
+ * project context snapshots, and chat sessions.
  */
 public final class AgentWorkspaceStore {
     private static final String PREFS = "daygreen_agent_workspace_v3";
@@ -20,6 +23,9 @@ public final class AgentWorkspaceStore {
     private static final String SESSIONS = "sessions_json";
     private static final String CURRENT = "current_session";
     private static final String FALLBACK_API_KEY = "fallback_gemini_api_key";
+    private static final String ACTIVE_TIER_MODE = "active_tier_mode"; // AUTO, PRO, MEDIUM, BASIC
+    private static final String LAST_VALIDATION_TIME = "last_validation_time";
+
     private final SharedPreferences prefs;
 
     public AgentWorkspaceStore(Context context) {
@@ -32,6 +38,9 @@ public final class AgentWorkspaceStore {
         public String key = "";
         public boolean enabled = true;
         public List<String> models = new ArrayList<>();
+        public List<String> proModels = new ArrayList<>();
+        public List<String> mediumModels = new ArrayList<>();
+        public List<String> basicModels = new ArrayList<>();
         public long lastUsed;
         public int failures;
         public String lastError = "";
@@ -39,6 +48,18 @@ public final class AgentWorkspaceStore {
 
         public boolean isValid() {
             return key != null && !key.trim().isEmpty() && !models.isEmpty();
+        }
+
+        public void categorizeModels() {
+            proModels.clear();
+            mediumModels.clear();
+            basicModels.clear();
+            for (String m : models) {
+                String tier = GeminiAutoClient.classifyModelTier(m);
+                if (GeminiAutoClient.TIER_PRO.equals(tier)) proModels.add(m);
+                else if (GeminiAutoClient.TIER_BASIC.equals(tier)) basicModels.add(m);
+                else mediumModels.add(m);
+            }
         }
     }
 
@@ -55,6 +76,22 @@ public final class AgentWorkspaceStore {
         public long created;
         public long updated;
         public List<Message> messages = new ArrayList<>();
+    }
+
+    public synchronized String getActiveTierMode() {
+        return prefs.getString(ACTIVE_TIER_MODE, GeminiAutoClient.TIER_AUTO);
+    }
+
+    public synchronized void setActiveTierMode(String mode) {
+        prefs.edit().putString(ACTIVE_TIER_MODE, mode).commit();
+    }
+
+    public synchronized long getLastValidationTime() {
+        return prefs.getLong(LAST_VALIDATION_TIME, 0L);
+    }
+
+    public synchronized void setLastValidationTime(long timestamp) {
+        prefs.edit().putLong(LAST_VALIDATION_TIME, timestamp).commit();
     }
 
     public synchronized List<Profile> getProfiles() {
@@ -89,7 +126,7 @@ public final class AgentWorkspaceStore {
             }
         }
 
-        // If completely empty, seed exactly 1 initial Profile so the user always has a card ready
+        // If completely empty, seed initial Profile
         if (list.isEmpty()) {
             Profile defaultProfile = new Profile();
             defaultProfile.name = "Gemini 1";
@@ -105,6 +142,7 @@ public final class AgentWorkspaceStore {
         String activeKey = "";
         try {
             for (Profile p : profiles) {
+                p.categorizeModels();
                 arr.put(profileTo(p));
                 if (activeKey.isEmpty() && p.key != null && !p.key.trim().isEmpty()) {
                     activeKey = p.key.trim();
@@ -116,7 +154,7 @@ public final class AgentWorkspaceStore {
         if (!activeKey.isEmpty()) {
             editor.putString(FALLBACK_API_KEY, activeKey);
         }
-        editor.commit(); // Use synchronous commit() to ensure instant disk persistence
+        editor.commit(); // Synchronous write for persistence
     }
 
     public synchronized String getFallbackApiKey() {
@@ -152,7 +190,6 @@ public final class AgentWorkspaceStore {
         List<Profile> list = getProfiles();
         list.removeIf(p -> p.id.equals(id));
         if (list.isEmpty()) {
-            // Keep at least one default profile card ready
             Profile p = new Profile();
             p.name = "Gemini 1";
             list.add(p);
@@ -260,6 +297,9 @@ public final class AgentWorkspaceStore {
         o.put("key", p.key);
         o.put("enabled", p.enabled);
         o.put("models", new JSONArray(p.models));
+        o.put("proModels", new JSONArray(p.proModels));
+        o.put("mediumModels", new JSONArray(p.mediumModels));
+        o.put("basicModels", new JSONArray(p.basicModels));
         o.put("lastUsed", p.lastUsed);
         o.put("failures", p.failures);
         o.put("lastError", p.lastError);
@@ -275,10 +315,19 @@ public final class AgentWorkspaceStore {
         p.enabled = o.optBoolean("enabled", true);
         JSONArray a = o.optJSONArray("models");
         if (a != null) for (int i = 0; i < a.length(); i++) p.models.add(a.optString(i));
+        JSONArray pro = o.optJSONArray("proModels");
+        if (pro != null) for (int i = 0; i < pro.length(); i++) p.proModels.add(pro.optString(i));
+        JSONArray med = o.optJSONArray("mediumModels");
+        if (med != null) for (int i = 0; i < med.length(); i++) p.mediumModels.add(med.optString(i));
+        JSONArray bas = o.optJSONArray("basicModels");
+        if (bas != null) for (int i = 0; i < bas.length(); i++) p.basicModels.add(bas.optString(i));
         p.lastUsed = o.optLong("lastUsed");
         p.failures = o.optInt("failures");
         p.lastError = o.optString("lastError", "");
         p.rate = o.optString("rate", "");
+        if (p.proModels.isEmpty() && !p.models.isEmpty()) {
+            p.categorizeModels();
+        }
         return p;
     }
 

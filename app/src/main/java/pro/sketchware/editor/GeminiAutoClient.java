@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -23,24 +24,35 @@ import okhttp3.Response;
 import okio.BufferedSource;
 
 /**
- * Gemini REST client: dynamic model discovery, health check validation, native multi-turn
- * conversations with system instruction, SSE streaming, usage telemetry, truncation signals
- * for seamless continuation, and robust high-demand / quota silent failover across model tiers.
+ * Gemini REST client v3.8 - Dayven AI Ultra Autonomous Engine.
+ *
+ * Implements:
+ * - Real-time discovery and multi-tier model classification (PRO, MEDIUM, BASIC, AUTO).
+ * - Multi-key intelligent routing with real-time rate-limit & failover monitoring.
+ * - Multi-turn conversation with native system instructions.
+ * - Dynamic fallback chain prioritizing active working models (gemini-2.0-flash, gemini-1.5-flash, gemini-1.5-pro).
  */
 public final class GeminiAutoClient {
     private static final String ROOT = "https://generativelanguage.googleapis.com/v1beta/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
     public static final int MAX_OUTPUT_TOKENS = 8192;
 
+    // Resilient fallback tiers: removing deprecated gemini-2.5-flash, putting active models first
     public static final List<String> FALLBACK_TIERS = Arrays.asList(
-            "gemini-2.5-flash",
             "gemini-2.0-flash",
-            "gemini-1.5-flash-latest",
             "gemini-1.5-flash",
+            "gemini-1.5-flash-latest",
             "gemini-2.0-flash-exp",
             "gemini-1.5-pro",
-            "gemini-3.6-flash"
+            "gemini-1.5-pro-latest",
+            "gemini-pro"
     );
+
+    // Tier definitions
+    public static final String TIER_PRO = "PRO";
+    public static final String TIER_MEDIUM = "MEDIUM";
+    public static final String TIER_BASIC = "BASIC";
+    public static final String TIER_AUTO = "AUTO";
 
     private final OkHttpClient http = new OkHttpClient.Builder()
             .callTimeout(Duration.ofSeconds(180))
@@ -91,7 +103,8 @@ public final class GeminiAutoClient {
         public boolean text() {
             if (!methods.contains("generateContent")) return false;
             String lower = name.toLowerCase(Locale.US);
-            if (lower.contains("tts") || lower.contains("image") || lower.contains("vision-preview") || lower.contains("embedding") || lower.contains("aqa")) {
+            if (lower.contains("tts") || lower.contains("image") || lower.contains("vision-preview")
+                    || lower.contains("embedding") || lower.contains("aqa")) {
                 return false;
             }
             return true;
@@ -100,6 +113,85 @@ public final class GeminiAutoClient {
         public String id() {
             return name.replace("models/", "");
         }
+
+        public String classifyTier() {
+            return classifyModelTier(id());
+        }
+    }
+
+    /**
+     * Modul 5: Klasifikasi Model Otomatis.
+     * TIER PRO: "pro", "ultra", "1.5-pro", "2.0-pro", "exp", "thinking", "advanced"
+     * TIER MEDIUM: "flash" (bukan flash-8b), "1.5-flash", "2.0-flash"
+     * TIER BASIC: "nano", "lite", "mini", "flash-8b", "embedding"
+     */
+    public static String classifyModelTier(String modelId) {
+        if (modelId == null) return TIER_MEDIUM;
+        String m = modelId.toLowerCase(Locale.US);
+        if (m.contains("nano") || m.contains("lite") || m.contains("mini") || m.contains("flash-8b")) {
+            return TIER_BASIC;
+        }
+        if (m.contains("pro") || m.contains("ultra") || m.contains("1.5-pro") || m.contains("2.0-pro")
+                || m.contains("exp") || m.contains("thinking") || m.contains("advanced")) {
+            return TIER_PRO;
+        }
+        if (m.contains("flash")) {
+            return TIER_MEDIUM;
+        }
+        return TIER_MEDIUM;
+    }
+
+    /**
+     * Modul 5: Auto Routing Logic.
+     * Scoring pesan:
+     * +3 poin: kata kunci teknis (algoritma, arsitektur, security, optimize, dsb)
+     * +3 poin: panjang pesan > 200 karakter
+     * +2 poin: mengandung kode / formatting code
+     * +2 poin: pertanyaan multi-bagian (> 2 tanda tanya)
+     * +1 poin: pertanyaan "kenapa" atau "bagaimana cara"
+     * +1 poin: konteks project
+     *
+     * Skor 7+: TIER PRO
+     * Skor 4-6: TIER MEDIUM
+     * Skor 0-3: TIER BASIC
+     */
+    public static String computeMessageTier(String prompt) {
+        if (prompt == null || prompt.trim().isEmpty()) return TIER_BASIC;
+        int score = 0;
+        String lower = prompt.toLowerCase(Locale.US);
+
+        if (lower.matches("(?s).*\\b(algoritma|arsitektur|architecture|security|keamanan|optimize|optimasi|vulnerability|refactor|database|room|retrofit)\\b.*")) {
+            score += 3;
+        }
+        if (prompt.length() > 200) {
+            score += 3;
+        }
+        if (prompt.contains("```") || prompt.contains("{") || prompt.contains("class ") || prompt.contains("<LinearLayout")) {
+            score += 2;
+        }
+        int questionMarks = countOccurrences(prompt, "?");
+        if (questionMarks > 2) {
+            score += 2;
+        }
+        if (lower.contains("kenapa") || lower.contains("bagaimana cara") || lower.contains("mengapa") || lower.contains("how to")) {
+            score += 1;
+        }
+        if (lower.contains("project") || lower.contains("activity") || lower.contains("sketchware")) {
+            score += 1;
+        }
+
+        if (score >= 7) return TIER_PRO;
+        if (score >= 4) return TIER_MEDIUM;
+        return TIER_BASIC;
+    }
+
+    private static int countOccurrences(String text, String sub) {
+        int count = 0, idx = 0;
+        while ((idx = text.indexOf(sub, idx)) != -1) {
+            count++;
+            idx += sub.length();
+        }
+        return count;
     }
 
     public static final class Usage {
@@ -160,20 +252,26 @@ public final class GeminiAutoClient {
         });
     }
 
+    /**
+     * Modul 5: Validasi Concurrent (Parallel) dengan prompt minimal ("Hi").
+     * Hanya model yang mengembalikan HTTP 200 dan respon valid yang dimasukkan.
+     */
     public void validateActiveModels(String apiKey, List<String> candidateModels, ValidateModelsCallback callback) {
         if (candidateModels == null || candidateModels.isEmpty()) {
             callback.onValidated(new ArrayList<>());
             return;
         }
 
-        List<String> verified = new ArrayList<>();
+        List<String> verified = Collections.synchronizedList(new ArrayList<>());
         AtomicInteger remaining = new AtomicInteger(candidateModels.size());
 
         for (String candidate : candidateModels) {
-            String m = candidate;
+            final String m = candidate;
             JSONObject pingPayload = new JSONObject();
             try {
-                pingPayload.put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray().put(new JSONObject().put("text", "ping")))));
+                pingPayload.put("contents", new JSONArray().put(
+                        new JSONObject().put("role", "user")
+                                .put("parts", new JSONArray().put(new JSONObject().put("text", "Hi")))));
                 pingPayload.put("generationConfig", new JSONObject().put("maxOutputTokens", 5));
             } catch (Exception ignored) { }
 
@@ -185,7 +283,7 @@ public final class GeminiAutoClient {
             http.newCall(req).enqueue(new Callback() {
                 @Override public void onFailure(Call call, IOException e) {
                     if (remaining.decrementAndGet() == 0) {
-                        callback.onValidated(verified);
+                        callback.onValidated(new ArrayList<>(verified));
                     }
                 }
 
@@ -196,15 +294,13 @@ public final class GeminiAutoClient {
                             JSONObject json = new JSONObject(body);
                             JSONArray candidates = json.optJSONArray("candidates");
                             if (candidates != null && candidates.length() > 0) {
-                                synchronized (verified) {
-                                    verified.add(m);
-                                }
+                                verified.add(m);
                             }
                         }
                     } catch (Exception ignored) {
                     } finally {
                         if (remaining.decrementAndGet() == 0) {
-                            callback.onValidated(verified);
+                            callback.onValidated(new ArrayList<>(verified));
                         }
                     }
                 }
@@ -353,7 +449,8 @@ public final class GeminiAutoClient {
         String lower = errorMsg.toLowerCase(Locale.US);
         return lower.contains("high demand") || lower.contains("resource_exhausted")
                 || lower.contains("quota") || lower.contains("429") || lower.contains("503")
-                || lower.contains("rate limit") || lower.contains("overloaded");
+                || lower.contains("rate limit") || lower.contains("overloaded")
+                || lower.contains("no longer available") || lower.contains("404");
     }
 
     private static String extractRate(Response response) {
