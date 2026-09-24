@@ -1,6 +1,10 @@
 package pro.sketchware.editor;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
+import android.view.View;
+import android.widget.Toast;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -17,8 +21,11 @@ import pro.sketchware.utility.XmlSyncHelper;
 /**
  * Parses Dayven AI's explicit action protocol and writes only after the user taps Accept.
  *
- * <p>v3.5 understands TARGET + code blocks, automatic XML sync to Sketchware Visual Editor
- * (ViewBean) via XmlSyncHelper, and builds structured execution step models for Claude-style UI.</p>
+ * <p>v3.6 Autonomous Shell & Execution Engine:
+ * - Real-time command shell execution dispatcher (`BUILD_TRIGGER`, `SHELL_CMD`, `AUTO_BUILD`).
+ * - Direct build/run trigger into DesignActivity (R.id.btn_run).
+ * - Automatic XML sync to Sketchware Visual Editor (ViewBean) via XmlSyncHelper.
+ * - Structured ExecutionStep parser for Claude-style real-time accordions.</p>
  */
 public final class AgentActionExecutor {
     private static final Pattern TARGET = Pattern.compile("(?im)^\\s*(?:TARGET|FILE)\\s*:\\s*([^\\r\\n]+)");
@@ -173,6 +180,32 @@ public final class AgentActionExecutor {
         if (action == null || !action.isXml()) return false;
         String lower = action.target.toLowerCase(Locale.US);
         return !lower.startsWith("res/") && !lower.startsWith("assets/");
+    }
+
+    /**
+     * Checks if response requests automated build execution.
+     */
+    public static boolean containsBuildTrigger(String response) {
+        if (response == null) return false;
+        return response.contains("[TRIGGER_RUN_BUILD]") || response.contains("TRIGGER: RUN_BUILD") || response.contains("BUILD_ACTION: EXECUTE");
+    }
+
+    /**
+     * Triggers the real Run / Build button in DesignActivity.
+     */
+    public static boolean triggerDesignActivityBuild(Activity activity) {
+        if (activity == null) return false;
+        try {
+            int btnRunId = activity.getResources().getIdentifier("btn_run", "id", activity.getPackageName());
+            if (btnRunId != 0) {
+                View btnRun = activity.findViewById(btnRunId);
+                if (btnRun != null) {
+                    activity.runOnUiThread(btnRun::performClick);
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) { }
+        return false;
     }
 
     /**
