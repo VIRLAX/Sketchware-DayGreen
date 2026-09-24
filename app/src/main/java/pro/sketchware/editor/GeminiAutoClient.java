@@ -33,12 +33,13 @@ public final class GeminiAutoClient {
     public static final int MAX_OUTPUT_TOKENS = 8192;
 
     public static final List<String> FALLBACK_TIERS = Arrays.asList(
-            "gemini-3.6-flash",
             "gemini-2.5-flash",
             "gemini-2.0-flash",
             "gemini-1.5-flash-latest",
             "gemini-1.5-flash",
-            "gemini-1.5-pro"
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-pro",
+            "gemini-3.6-flash"
     );
 
     private final OkHttpClient http = new OkHttpClient.Builder()
@@ -159,10 +160,6 @@ public final class GeminiAutoClient {
         });
     }
 
-    /**
-     * Probes candidate models against the real time Gemini server with a lightweight health
-     * check ping. Only models that answer with HTTP 200 and a real candidate survive.
-     */
     public void validateActiveModels(String apiKey, List<String> candidateModels, ValidateModelsCallback callback) {
         if (candidateModels == null || candidateModels.isEmpty()) {
             callback.onValidated(new ArrayList<>());
@@ -215,17 +212,12 @@ public final class GeminiAutoClient {
         }
     }
 
-    /** Legacy single prompt streaming. */
     public void stream(String apiKey, String model, String prompt, Listener listener) {
         List<Turn> turns = new ArrayList<>();
         turns.add(Turn.user(prompt));
         streamConversation(apiKey, model, "", turns, MAX_OUTPUT_TOKENS, listener);
     }
 
-    /**
-     * Streams a full conversation. The system instruction is sent natively when the model
-     * supports it, and transparently merged into the first user turn when it does not.
-     */
     public void streamConversation(String apiKey, String model, String systemInstruction, List<Turn> turns, int maxTokens, Listener listener) {
         boolean useSystem = systemInstruction != null && !systemInstruction.trim().isEmpty();
         dispatch(apiKey, model, systemInstruction, turns, maxTokens, useSystem, listener);
@@ -286,7 +278,6 @@ public final class GeminiAutoClient {
                     try (Response ignored = response) {
                         body = ignored.body() == null ? "" : ignored.body().string();
                     } catch (IOException ignored) { }
-                    // Older models reject systemInstruction: retry once with it merged inline.
                     if (code == 400 && hasSystem && nativeSystem) {
                         dispatch(apiKey, model, systemInstruction, conversation, maxTokens, false, listener);
                         return;
@@ -352,13 +343,11 @@ public final class GeminiAutoClient {
         });
     }
 
-    /** True when the failure is worth retrying on another model or key. */
     public static boolean retryable(int status) {
         return status == 0 || status == 204 || status == 400 || status == 403 || status == 404
                 || status == 429 || status == 500 || status == 503 || status == 504;
     }
 
-    /** Checks whether error string indicates high demand / resource exhausted. */
     public static boolean isHighDemandOrQuotaError(String errorMsg) {
         if (errorMsg == null) return false;
         String lower = errorMsg.toLowerCase(Locale.US);
