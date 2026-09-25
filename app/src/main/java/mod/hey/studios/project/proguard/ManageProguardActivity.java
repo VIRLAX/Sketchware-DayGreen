@@ -73,13 +73,14 @@ public class ManageProguardActivity extends BaseAppCompatActivity
 
     private void showProtectionComboDialog() {
         new MaterialAlertDialogBuilder(this)
-                .setTitle("🛡️ Protection Combo (Score 98/100)")
-                .setMessage("Terapkan Full Defense Combo Suite:\n\n" +
-                        "1. Aktifkan R8 Optimizer & Obfuscator (7 passes)\n" +
-                        "2. Auto-Inject Maximum ProGuard Rules (repackage, keep rules)\n" +
-                        "3. Aktifkan StringFog (AES-256 GCM authenticated)\n" +
-                        "4. Injeksi SISTEM 30 Compile-Time Encryption Engine (DexEncryptTask + DayvenClassLoader + StringVault + FlowGuard + AssetEncryptor)\n" +
-                        "5. Auto-provision essential defense libraries untuk Full Mode\n\n" +
+                .setTitle("🛡️ Protection Combo (Realistic In-App Suite)")
+                .setMessage("Terapkan Paket Proteksi Realistis Sketchware Pro:\n\n" +
+                        "1. Aktifkan R8 Optimizer & Obfuscator (Aggressive shrinking & repackaging)\n" +
+                        "2. Auto-Inject Maximum ProGuard Rules (flatten package & strip deadcode)\n" +
+                        "3. Aktifkan StringFog AES-256 GCM (Enkripsi literal string saat compile)\n" +
+                        "4. Injeksi StringFogImpl runtime & Decoy Classes (LicenseManager, PaymentProcessor)\n" +
+                        "5. Injeksi Security Guard (SignatureGuard, AntiDebug, EnvironmentGuard, StringVault)\n\n" +
+                        "(Catatan: Untuk proteksi DEX level packer/jiagu, proses APK hasil build dengan Jiagu/360 setelah diekspor).\n\n" +
                         "Jalankan one-tap combo sekarang?")
                 .setPositiveButton("Aktifkan Combo", (dialog, which) -> applyProtectionCombo())
                 .setNegativeButton(R.string.common_word_cancel, null)
@@ -105,7 +106,7 @@ public class ManageProguardActivity extends BaseAppCompatActivity
             binding.swStringfogEnabled.setChecked(true);
         }
 
-        // 4. Inject Java Protection Classes & SISTEM 30 into project source dir
+        // 4. Inject Java Protection Classes, Decoys & StringFogImpl runtime into project source dir
         try {
             String javaDir = FileUtil.getExternalStorageDir() + "/.sketchware/mysc/" + scId + "/app/src/main/java";
             if (FileUtil.isExistFile(javaDir)) {
@@ -116,9 +117,35 @@ public class ManageProguardActivity extends BaseAppCompatActivity
                 FileUtil.writeFile(targetDir + "/AntiDebug.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateAntiDebug(pkg));
                 FileUtil.writeFile(targetDir + "/EnvironmentGuard.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateEnvironmentGuard(pkg));
                 FileUtil.writeFile(targetDir + "/TamperAwareOutput.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateTamperAwareOutput(pkg));
-                FileUtil.writeFile(targetDir + "/CustomClassLoader.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateDEXClassLoader(pkg));
 
-                // SISTEM 30 runtime classes
+                // Decoy Classes to mislead reverse-engineers
+                String decoyPkg = "com.app.security.internal";
+                String decoyDir = javaDir + "/" + decoyPkg.replace(".", "/");
+                FileUtil.makeDir(decoyDir);
+                FileUtil.writeFile(decoyDir + "/LicenseManager.java",
+                        "package " + decoyPkg + ";\n\n" +
+                        "public class LicenseManager {\n" +
+                        "    private static final String LICENSE_SERVER = \"https://license.fake-server.com/verify\";\n" +
+                        "    private static final String SECRET_KEY = \"FAKE_LICENSE_KEY_DECOY_2024\";\n\n" +
+                        "    public static boolean verifyLicense(String key) {\n" +
+                        "        return key != null && key.hashCode() == 0xDEADBEEF;\n" +
+                        "    }\n\n" +
+                        "    public static String getLicenseToken() {\n" +
+                        "        return \"DECOY_TOKEN_\" + Long.toHexString(System.nanoTime());\n" +
+                        "    }\n" +
+                        "}\n");
+
+                FileUtil.writeFile(decoyDir + "/PaymentProcessor.java",
+                        "package " + decoyPkg + ";\n\n" +
+                        "public class PaymentProcessor {\n" +
+                        "    private static final String PAYMENT_URL = \"https://payment.fake-api.com/process\";\n" +
+                        "    private static final String MERCHANT_ID = \"FAKE_MERCHANT_ID_DECOY\";\n\n" +
+                        "    public static boolean processPayment(double amount, String card) {\n" +
+                        "        return amount > 0 && card != null;\n" +
+                        "    }\n" +
+                        "}\n");
+
+                // SISTEM 30 runtime classes & StringFogImpl AES-256 GCM
                 String protPkg = "pro.sketchware.protection";
                 String protTargetDir = javaDir + "/" + protPkg.replace(".", "/");
                 FileUtil.makeDir(protTargetDir);
@@ -137,6 +164,79 @@ public class ManageProguardActivity extends BaseAppCompatActivity
                         "        try { return r.call(); } catch(Exception e) { return null; }\n" +
                         "    }\n" +
                         "    public static int getRealState() { return 0; }\n" +
+                        "}\n");
+
+                // Inject StringFogImpl with AES-256 GCM directly into the project classpath
+                FileUtil.writeFile(protTargetDir + "/StringFogImpl.java",
+                        "package " + protPkg + ";\n\n" +
+                        "import java.nio.charset.StandardCharsets;\n" +
+                        "import java.security.SecureRandom;\n" +
+                        "import javax.crypto.Cipher;\n" +
+                        "import javax.crypto.spec.GCMParameterSpec;\n" +
+                        "import javax.crypto.spec.SecretKeySpec;\n\n" +
+                        "public final class StringFogImpl {\n" +
+                        "    private static final String ALGO = \"AES/GCM/NoPadding\";\n" +
+                        "    private static final int GCM_TAG_LENGTH = 128;\n" +
+                        "    private static final int IV_LENGTH = 12;\n" +
+                        "    private StringFogImpl() {}\n\n" +
+                        "    public static String decrypt(byte[] data, byte[] key) {\n" +
+                        "        if (data == null || key == null) return \"\";\n" +
+                        "        try {\n" +
+                        "            if (data.length <= IV_LENGTH) {\n" +
+                        "                byte[] xorResult = new byte[data.length];\n" +
+                        "                for (int i = 0; i < data.length; i++) {\n" +
+                        "                    xorResult[i] = (byte) (data[i] ^ key[i % key.length]);\n" +
+                        "                }\n" +
+                        "                return new String(xorResult, StandardCharsets.UTF_8);\n" +
+                        "            }\n" +
+                        "            GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, data, 0, IV_LENGTH);\n" +
+                        "            SecretKeySpec keySpec = new SecretKeySpec(normalizeKey(key), \"AES\");\n" +
+                        "            Cipher cipher = Cipher.getInstance(ALGO);\n" +
+                        "            cipher.init(Cipher.DECRYPT_MODE, keySpec, spec);\n" +
+                        "            byte[] decrypted = cipher.doFinal(data, IV_LENGTH, data.length - IV_LENGTH);\n" +
+                        "            return new String(decrypted, StandardCharsets.UTF_8);\n" +
+                        "        } catch (Exception e) {\n" +
+                        "            byte[] fallback = new byte[data.length];\n" +
+                        "            for (int i = 0; i < data.length; i++) {\n" +
+                        "                fallback[i] = (byte) (data[i] ^ key[i % key.length]);\n" +
+                        "            }\n" +
+                        "            return new String(fallback, StandardCharsets.UTF_8);\n" +
+                        "        }\n" +
+                        "    }\n\n" +
+                        "    public static byte[] encrypt(String data, byte[] key) {\n" +
+                        "        if (data == null) return new byte[0];\n" +
+                        "        try {\n" +
+                        "            byte[] iv = new byte[IV_LENGTH];\n" +
+                        "            new SecureRandom().nextBytes(iv);\n" +
+                        "            GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);\n" +
+                        "            SecretKeySpec keySpec = new SecretKeySpec(normalizeKey(key), \"AES\");\n" +
+                        "            Cipher cipher = Cipher.getInstance(ALGO);\n" +
+                        "            cipher.init(Cipher.ENCRYPT_MODE, keySpec, spec);\n" +
+                        "            byte[] cipherText = cipher.doFinal(data.getBytes(StandardCharsets.UTF_8));\n" +
+                        "            byte[] combined = new byte[iv.length + cipherText.length];\n" +
+                        "            System.arraycopy(iv, 0, combined, 0, iv.length);\n" +
+                        "            System.arraycopy(cipherText, 0, combined, iv.length, cipherText.length);\n" +
+                        "            return combined;\n" +
+                        "        } catch (Exception e) {\n" +
+                        "            byte[] bytes = data.getBytes(StandardCharsets.UTF_8);\n" +
+                        "            byte[] out = new byte[bytes.length];\n" +
+                        "            for (int i = 0; i < bytes.length; i++) {\n" +
+                        "                out[i] = (byte) (bytes[i] ^ key[i % key.length]);\n" +
+                        "            }\n" +
+                        "            return out;\n" +
+                        "        }\n" +
+                        "    }\n\n" +
+                        "    public static boolean overflow(String data, byte[] key) {\n" +
+                        "        return data != null && data.length() > 65535;\n" +
+                        "    }\n\n" +
+                        "    private static byte[] normalizeKey(byte[] key) {\n" +
+                        "        byte[] k = new byte[32];\n" +
+                        "        if (key == null || key.length == 0) return k;\n" +
+                        "        for (int i = 0; i < 32; i++) {\n" +
+                        "            k[i] = key[i % key.length];\n" +
+                        "        }\n" +
+                        "        return k;\n" +
+                        "    }\n" +
                         "}\n");
             }
 
