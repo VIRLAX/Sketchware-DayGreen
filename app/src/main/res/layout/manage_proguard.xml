@@ -22,7 +22,7 @@
             app:collapsedTitleTextAppearance="@style/TextAppearance.Material3.TitleMedium"
             app:expandedTitleTextAppearance="@style/TextAppearance.Material3.DisplaySmall"
             app:layout_scrollFlags="scroll|exitUntilCollapsed"
-            app:title="@string/design_drawer_menu_proguard">
+            app:title="Protection Manager">
 
             <com.google.android.material.appbar.MaterialToolbar
                 android:id="@+id/toolbar"
@@ -46,6 +46,116 @@
             android:layout_height="match_parent"
             android:orientation="vertical"
             android:paddingTop="100dp">
+
+            <!-- ONE-TAP PROTECTION COMBO CARD -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cv_protection_combo"
+                style="@style/Widget.Material3.CardView.Filled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginBottom="16dp"
+                android:backgroundTint="?attr/colorSecondaryContainer"
+                app:cardCornerRadius="20dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="?attr/colorSecondary">
+
+                <LinearLayout
+                    android:id="@+id/ln_combo_click"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackground"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:src="@drawable/ic_mtrl_shield_lock"
+                            app:tint="?attr/colorSecondary" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:text="🛡️ One-Tap Protection Combo (Score 95/100)"
+                            android:textColor="?attr/colorOnSecondaryContainer"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Otomatis aktifkan R8 Shrinking, inject Maximum ProGuard Rules, aktifkan StringFog AES-256 GCM, dan inject Security Guard classes (Signature, AntiDebug, Environment, TamperAware)."
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_activate_combo"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:layout_marginTop="10dp"
+                        android:text="Aktifkan Combo" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- STRINGFOG INTEGRATION ROW -->
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/ln_stringfog_enabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:orientation="vertical"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toStartOf="@id/sw_stringfog_enabled"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="StringFog Obfuscation"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Enkripsi string konstan di aplikasi pada saat kompilasi dengan AES-256 GCM authenticated encryption."
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:textSize="14sp" />
+
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/sw_stringfog_enabled"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="false"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:id="@+id/ln_r8_memory"
@@ -378,7 +488,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Use Code Shrinking"
+                android:text="Use Code Shrinking &amp; Protection"
                 android:textColor="?attr/colorPrimary"
                 android:textSize="18sp" />
 
