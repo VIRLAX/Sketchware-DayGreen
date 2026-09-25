@@ -264,7 +264,7 @@ public final class DayvenAutonomousSuite {
                     "import javax.crypto.spec.GCMParameterSpec;\n" +
                     "import javax.crypto.spec.PBEKeySpec;\n" +
                     "import javax.crypto.spec.SecretKeySpec;\n" +
-                    "import java.security.SecureRandom;\n" +
+                    "java.security.SecureRandom;\n" +
                     "import android.util.Base64;\n\n" +
                     "public class StringEncryptor {\n" +
                     "    private static final byte[] SALT = {\n" +
@@ -317,9 +317,10 @@ public final class DayvenAutonomousSuite {
                     "}\n";
         }
 
-        public static String getSignatureGuardSource(String expectedSha256) {
+        public static String generateSignatureGuard(String packageName, String expectedSha256) {
+            String pkg = (packageName != null && !packageName.isEmpty()) ? packageName : "com.dayven.security";
             String hash = expectedSha256 != null ? expectedSha256 : "REPLACE_WITH_YOUR_ACTUAL_SHA256_SIGNATURE_HASH";
-            return "package com.dayven.security;\n\n" +
+            return "package " + pkg + ";\n\n" +
                     "import android.content.Context;\n" +
                     "import android.content.pm.PackageInfo;\n" +
                     "import android.content.pm.PackageManager;\n" +
@@ -348,8 +349,13 @@ public final class DayvenAutonomousSuite {
                     "}\n";
         }
 
-        public static String getAntiDebugSource() {
-            return "package com.dayven.security;\n\n" +
+        public static String getSignatureGuardSource(String expectedSha256) {
+            return generateSignatureGuard("com.dayven.security", expectedSha256);
+        }
+
+        public static String generateAntiDebug(String packageName) {
+            String pkg = (packageName != null && !packageName.isEmpty()) ? packageName : "com.dayven.security";
+            return "package " + pkg + ";\n\n" +
                     "import android.content.Context;\n" +
                     "import java.io.BufferedReader;\n" +
                     "import java.io.FileReader;\n\n" +
@@ -372,8 +378,13 @@ public final class DayvenAutonomousSuite {
                     "}\n";
         }
 
-        public static String getEnvironmentGuardSource() {
-            return "package com.dayven.security;\n\n" +
+        public static String getAntiDebugSource() {
+            return generateAntiDebug("com.dayven.security");
+        }
+
+        public static String generateEnvironmentGuard(String packageName) {
+            String pkg = (packageName != null && !packageName.isEmpty()) ? packageName : "com.dayven.security";
+            return "package " + pkg + ";\n\n" +
                     "import java.io.File;\n\n" +
                     "public class EnvironmentGuard {\n" +
                     "    private static final String[] ROOT_PATHS = {\n" +
@@ -395,8 +406,13 @@ public final class DayvenAutonomousSuite {
                     "}\n";
         }
 
-        public static String getTamperAwareOutputSource() {
-            return "package com.dayven.security;\n\n" +
+        public static String getEnvironmentGuardSource() {
+            return generateEnvironmentGuard("com.dayven.security");
+        }
+
+        public static String generateTamperAwareOutput(String packageName) {
+            String pkg = (packageName != null && !packageName.isEmpty()) ? packageName : "com.dayven.security";
+            return "package " + pkg + ";\n\n" +
                     "import android.content.Context;\n\n" +
                     "public class TamperAwareOutput {\n" +
                     "    private static boolean isTampered = false;\n\n" +
@@ -414,8 +430,13 @@ public final class DayvenAutonomousSuite {
                     "}\n";
         }
 
-        public static String getCustomClassLoaderSource() {
-            return "package com.dayven.security;\n\n" +
+        public static String getTamperAwareOutputSource() {
+            return generateTamperAwareOutput("com.dayven.security");
+        }
+
+        public static String generateDEXClassLoader(String packageName) {
+            String pkg = (packageName != null && !packageName.isEmpty()) ? packageName : "com.dayven.security";
+            return "package " + pkg + ";\n\n" +
                     "import android.content.Context;\n" +
                     "import dalvik.system.DexClassLoader;\n" +
                     "import java.io.ByteArrayOutputStream;\n" +
@@ -429,7 +450,7 @@ public final class DayvenAutonomousSuite {
                     "    private static final String ENCRYPTED_DEX = \"classes_enc.dex\";\n" +
                     "    private static final byte[] DEX_KEY = {\n" +
                     "        (byte)0x44, (byte)0x61, (byte)0x79, (byte)0x76, (byte)0x65, (byte)0x6E, (byte)0x5F, (byte)0x44,\n" +
-                    "        (byte)0x45, (byte)0x58, (byte)0x5F, (byte)0x4B, (byte)0x45, (byte)0x59, (byte)0x5F, (byte)0x31,\n" +
+                    "        (byte)0x45, (byte)0x58, (byte)0x4B, (byte)0x45, (byte)0x59, (byte)0x5F, (byte)0x31,\n" +
                     "        (byte)0x32, (byte)0x33, (byte)0x34, (byte)0x35, (byte)0x36, (byte)0x37, (byte)0x38, (byte)0x39,\n" +
                     "        (byte)0x41, (byte)0x42, (byte)0x43, (byte)0x44, (byte)0x45, (byte)0x46, (byte)0x47, (byte)0x48\n" +
                     "    };\n\n" +
@@ -461,53 +482,67 @@ public final class DayvenAutonomousSuite {
                     "    }\n" +
                     "}\n";
         }
+
+        public static String getCustomClassLoaderSource() {
+            return generateDEXClassLoader("com.dayven.security");
+        }
     }
 
     /**
      * SISTEM 26: Full Maximum Protection ProGuard Rules
      */
     public static final class ProGuardInjectorEngine {
+        public static String generateMaximalRules(boolean keepLineNumbers) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("# ============================================================\n");
+            sb.append("# DAYVEN PROTECTION — MAXIMUM R8/PROGUARD RULES\n");
+            sb.append("# ============================================================\n");
+            sb.append("-repackageclasses ''\n");
+            sb.append("-allowaccessmodification\n");
+            sb.append("-optimizationpasses 7\n");
+            sb.append("-dontusemixedcaseclassnames\n");
+            sb.append("-verbose\n");
+            sb.append("-ignorewarnings\n");
+            sb.append("-dontwarn **\n");
+            sb.append("-dontnote **\n");
+            if (keepLineNumbers) {
+                sb.append("-renamesourcefileattribute SourceFile\n");
+                sb.append("-keepattributes SourceFile,LineNumberTable\n");
+            }
+            sb.append("# === KEEP ESSENTIALS ===\n");
+            sb.append("-keep public class * extends android.app.Activity\n");
+            sb.append("-keep public class * extends android.app.Application\n");
+            sb.append("-keep public class * extends android.app.Service\n");
+            sb.append("-keep public class * extends android.content.BroadcastReceiver\n");
+            sb.append("-keep public class * extends android.content.ContentProvider\n");
+            sb.append("-keep public class * extends android.view.View { public <init>(...); public void set*(...); }\n");
+            sb.append("-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,Exceptions\n");
+            sb.append("# === PROTECTION CLASSES ===\n");
+            sb.append("-keep class **.SignatureGuard { *; }\n");
+            sb.append("-keepclassmembers class **.SignatureGuard { *; }\n");
+            sb.append("-keep class **.AntiDebug { *; }\n");
+            sb.append("-keepclassmembers class **.AntiDebug { *; }\n");
+            sb.append("-keep class **.EnvironmentGuard { *; }\n");
+            sb.append("-keepclassmembers class **.EnvironmentGuard { *; }\n");
+            sb.append("-keep class **.TamperAwareOutput { *; }\n");
+            sb.append("-keepclassmembers class **.TamperAwareOutput { *; }\n");
+            sb.append("-keep class **.CustomClassLoader { *; }\n");
+            sb.append("-keepclassmembers class **.CustomClassLoader { *; }\n");
+            sb.append("-keep class **.StringEncryptor { *; }\n");
+            sb.append("-keepclassmembers class **.StringEncryptor { *; }\n");
+            sb.append("# === CRYPTO PROVIDER ===\n");
+            sb.append("-keep class javax.crypto.** { *; }\n");
+            sb.append("-keep class java.security.** { *; }\n");
+            sb.append("-dontwarn javax.crypto.**\n");
+            sb.append("-dontwarn java.security.**\n");
+            sb.append("# === STRING OBFUSCATION ===\n");
+            sb.append("-keepclassmembers class * { static java.lang.String *; }\n");
+            sb.append("# ============================================================\n");
+            return sb.toString();
+        }
+
         public static String getFullMaximumRules() {
-            return "# ============================================================\n" +
-                    "# DAYVEN PROTECTION — MAXIMUM R8/PROGUARD RULES\n" +
-                    "# ============================================================\n" +
-                    "-repackageclasses ''\n" +
-                    "-allowaccessmodification\n" +
-                    "-optimizationpasses 7\n" +
-                    "-dontusemixedcaseclassnames\n" +
-                    "-verbose\n" +
-                    "-ignorewarnings\n" +
-                    "-dontwarn **\n" +
-                    "-dontnote **\n" +
-                    "# === KEEP ESSENTIALS ===\n" +
-                    "-keep public class * extends android.app.Activity\n" +
-                    "-keep public class * extends android.app.Application\n" +
-                    "-keep public class * extends android.app.Service\n" +
-                    "-keep public class * extends android.content.BroadcastReceiver\n" +
-                    "-keep public class * extends android.content.ContentProvider\n" +
-                    "-keep public class * extends android.view.View { public <init>(...); public void set*(...); }\n" +
-                    "-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,Exceptions\n" +
-                    "# === PROTECTION CLASSES ===\n" +
-                    "-keep class **.SignatureGuard { *; }\n" +
-                    "-keepclassmembers class **.SignatureGuard { *; }\n" +
-                    "-keep class **.AntiDebug { *; }\n" +
-                    "-keepclassmembers class **.AntiDebug { *; }\n" +
-                    "-keep class **.EnvironmentGuard { *; }\n" +
-                    "-keepclassmembers class **.EnvironmentGuard { *; }\n" +
-                    "-keep class **.TamperAwareOutput { *; }\n" +
-                    "-keepclassmembers class **.TamperAwareOutput { *; }\n" +
-                    "-keep class **.CustomClassLoader { *; }\n" +
-                    "-keepclassmembers class **.CustomClassLoader { *; }\n" +
-                    "-keep class **.StringEncryptor { *; }\n" +
-                    "-keepclassmembers class **.StringEncryptor { *; }\n" +
-                    "# === CRYPTO PROVIDER ===\n" +
-                    "-keep class javax.crypto.** { *; }\n" +
-                    "-keep class java.security.** { *; }\n" +
-                    "-dontwarn javax.crypto.**\n" +
-                    "-dontwarn java.security.**\n" +
-                    "# === STRING OBFUSCATION ===\n" +
-                    "-keepclassmembers class * { static java.lang.String *; }\n" +
-                    "# ============================================================\n";
+            return generateMaximalRules(false);
         }
     }
 
