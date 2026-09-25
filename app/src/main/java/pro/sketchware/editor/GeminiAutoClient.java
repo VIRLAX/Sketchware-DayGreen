@@ -10,9 +10,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -27,18 +30,20 @@ import okio.BufferedSource;
  * Gemini REST client v3.8 - Dayven AI Ultra Autonomous Engine.
  *
  * Implements:
- * - Real-time discovery and multi-tier model classification (PRO, MEDIUM, BASIC, AUTO).
+ * - Real-time discovery and dynamic latest-version prioritization.
+ * - Multi-tier model classification (PRO, MEDIUM, BASIC, AUTO).
  * - Multi-key intelligent routing with real-time rate-limit & failover monitoring.
  * - Multi-turn conversation with native system instructions.
- * - Dynamic fallback chain prioritizing active working models (gemini-2.0-flash, gemini-1.5-flash, gemini-1.5-pro).
+ * - Dynamic fallback chain prioritizing active working models (including gemini-3.6-flash, 3.x, 2.x, 1.5).
  */
 public final class GeminiAutoClient {
     private static final String ROOT = "https://generativelanguage.googleapis.com/v1beta/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
     public static final int MAX_OUTPUT_TOKENS = 8192;
 
-    // Resilient fallback tiers: removing deprecated gemini-2.5-flash, putting active models first
+    // Resilient fallback tiers: dynamically prioritizing modern active versions
     public static final List<String> FALLBACK_TIERS = Arrays.asList(
+            "gemini-3.6-flash",
             "gemini-2.0-flash",
             "gemini-1.5-flash",
             "gemini-1.5-flash-latest",
@@ -120,9 +125,32 @@ public final class GeminiAutoClient {
     }
 
     /**
+     * Modul 5: Dynamic Version Parser & Recency Scoring.
+     * Extracts version numbers (e.g. 3.6, 2.0, 1.5) to ensure latest models are prioritized first.
+     */
+    public static double extractModelVersion(String modelId) {
+        if (modelId == null) return 0.0;
+        String m = modelId.toLowerCase(Locale.US);
+        Pattern p = Pattern.compile("(\\d+(?:\\.\\d+)?)");
+        Matcher matcher = p.matcher(m);
+        double highest = 0.0;
+        while (matcher.find()) {
+            try {
+                double val = Double.parseDouble(matcher.group(1));
+                if (val > highest && val < 100.0) { // filter out 8b or token sizes
+                    highest = val;
+                }
+            } catch (Exception ignored) { }
+        }
+        if (m.contains("latest")) highest += 0.05;
+        if (m.contains("exp")) highest += 0.02;
+        return highest;
+    }
+
+    /**
      * Modul 5: Klasifikasi Model Otomatis.
-     * TIER PRO: "pro", "ultra", "1.5-pro", "2.0-pro", "exp", "thinking", "advanced"
-     * TIER MEDIUM: "flash" (bukan flash-8b), "1.5-flash", "2.0-flash"
+     * TIER PRO: "pro", "ultra", "exp", "thinking", "advanced"
+     * TIER MEDIUM: "flash" (bukan flash-8b)
      * TIER BASIC: "nano", "lite", "mini", "flash-8b", "embedding"
      */
     public static String classifyModelTier(String modelId) {
@@ -131,8 +159,7 @@ public final class GeminiAutoClient {
         if (m.contains("nano") || m.contains("lite") || m.contains("mini") || m.contains("flash-8b")) {
             return TIER_BASIC;
         }
-        if (m.contains("pro") || m.contains("ultra") || m.contains("1.5-pro") || m.contains("2.0-pro")
-                || m.contains("exp") || m.contains("thinking") || m.contains("advanced")) {
+        if (m.contains("pro") || m.contains("ultra") || m.contains("exp") || m.contains("thinking") || m.contains("advanced")) {
             return TIER_PRO;
         }
         if (m.contains("flash")) {
@@ -143,17 +170,6 @@ public final class GeminiAutoClient {
 
     /**
      * Modul 5: Auto Routing Logic.
-     * Scoring pesan:
-     * +3 poin: kata kunci teknis (algoritma, arsitektur, security, optimize, dsb)
-     * +3 poin: panjang pesan > 200 karakter
-     * +2 poin: mengandung kode / formatting code
-     * +2 poin: pertanyaan multi-bagian (> 2 tanda tanya)
-     * +1 poin: pertanyaan "kenapa" atau "bagaimana cara"
-     * +1 poin: konteks project
-     *
-     * Skor 7+: TIER PRO
-     * Skor 4-6: TIER MEDIUM
-     * Skor 0-3: TIER BASIC
      */
     public static String computeMessageTier(String prompt) {
         if (prompt == null || prompt.trim().isEmpty()) return TIER_BASIC;
@@ -244,6 +260,16 @@ public final class GeminiAutoClient {
                             }
                         }
                     }
+
+                    // Dynamically sort models so the latest versions (highest version score) are at the top
+                    Collections.sort(out, new Comparator<ModelInfo>() {
+                        @Override public int compare(ModelInfo o1, ModelInfo o2) {
+                            double v1 = extractModelVersion(o1.id());
+                            double v2 = extractModelVersion(o2.id());
+                            return Double.compare(v2, v1); // Descending (latest first)
+                        }
+                    });
+
                     listener.onModels(out, remaining, retry);
                 } catch (Exception e) {
                     listener.onError(0, message(e), remaining, retry);
@@ -253,8 +279,8 @@ public final class GeminiAutoClient {
     }
 
     /**
-     * Modul 5: Validasi Concurrent (Parallel) dengan prompt minimal ("Hi").
-     * Hanya model yang mengembalikan HTTP 200 dan respon valid yang dimasukkan.
+     * Modul 5: Dynamic Concurrent Validation with Ping.
+     * Evaluates candidate models, prioritizes the latest active models, and weeds out deprecated ones.
      */
     public void validateActiveModels(String apiKey, List<String> candidateModels, ValidateModelsCallback callback) {
         if (candidateModels == null || candidateModels.isEmpty()) {
@@ -283,7 +309,7 @@ public final class GeminiAutoClient {
             http.newCall(req).enqueue(new Callback() {
                 @Override public void onFailure(Call call, IOException e) {
                     if (remaining.decrementAndGet() == 0) {
-                        callback.onValidated(new ArrayList<>(verified));
+                        finishValidation(verified, callback);
                     }
                 }
 
@@ -300,12 +326,25 @@ public final class GeminiAutoClient {
                     } catch (Exception ignored) {
                     } finally {
                         if (remaining.decrementAndGet() == 0) {
-                            callback.onValidated(new ArrayList<>(verified));
+                            finishValidation(verified, callback);
                         }
                     }
                 }
             });
         }
+    }
+
+    private void finishValidation(List<String> verified, ValidateModelsCallback callback) {
+        List<String> sorted = new ArrayList<>(verified);
+        // Sort verified models descending by version number so the newest model is selected first
+        Collections.sort(sorted, new Comparator<String>() {
+            @Override public int compare(String m1, String m2) {
+                double v1 = extractModelVersion(m1);
+                double v2 = extractModelVersion(m2);
+                return Double.compare(v2, v1);
+            }
+        });
+        callback.onValidated(sorted);
     }
 
     public void stream(String apiKey, String model, String prompt, Listener listener) {
