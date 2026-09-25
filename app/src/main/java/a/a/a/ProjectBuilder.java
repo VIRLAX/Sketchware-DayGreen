@@ -1013,15 +1013,30 @@ public class ProjectBuilder {
                     "stringFogMapping.txt"));
             StringFogClassInjector stringFogClassInjector = new StringFogClassInjector(new String[0],
                     "UTF-8",
-                    "com.github.megatronking.stringfog.xor.StringFogImpl",
-                    "com.github.megatronking.stringfog.xor.StringFogImpl",
+                    "pro.sketchware.protection.StringFogImpl",
+                    "pro.sketchware.protection.StringFogImpl",
                     stringFogMappingPrinter);
             stringFogMappingPrinter.startMappingOutput();
-            stringFogMappingPrinter.ouputInfo("UTF-8", "com.github.megatronking.stringfog.xor.StringFogImpl");
+            stringFogMappingPrinter.ouputInfo("UTF-8", "pro.sketchware.protection.StringFogImpl");
             stringFogClassInjector.doFog2ClassInDir(new File(yq.compiledClassesPath));
             KB.a(context, "stringfog/stringfog.zip", yq.compiledClassesPath);
         } catch (Exception e) {
-            LogUtil.e("StringFog", "Failed to run StringFog", e);
+            LogUtil.w("StringFog", "Retrying StringFog with standard XOR fallback...", e);
+            try {
+                StringFogMappingPrinter stringFogMappingPrinter = new StringFogMappingPrinter(new File(yq.binDirectoryPath,
+                        "stringFogMapping.txt"));
+                StringFogClassInjector fallbackInjector = new StringFogClassInjector(new String[0],
+                        "UTF-8",
+                        "com.github.megatronking.stringfog.xor.StringFogImpl",
+                        "com.github.megatronking.stringfog.xor.StringFogImpl",
+                        stringFogMappingPrinter);
+                stringFogMappingPrinter.startMappingOutput();
+                stringFogMappingPrinter.ouputInfo("UTF-8", "com.github.megatronking.stringfog.xor.StringFogImpl");
+                fallbackInjector.doFog2ClassInDir(new File(yq.compiledClassesPath));
+                KB.a(context, "stringfog/stringfog.zip", yq.compiledClassesPath);
+            } catch (Exception ex) {
+                LogUtil.e("StringFog", "Failed to run StringFog fallback", ex);
+            }
         }
     }
 
