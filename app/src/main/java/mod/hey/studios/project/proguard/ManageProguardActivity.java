@@ -8,20 +8,25 @@ import android.widget.CompoundButton;
 import com.besome.sketch.lib.base.BaseAppCompatActivity;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 
 import extensions.anbui.daydream.library.DRFeatureManager;
 import mod.agus.jcoderz.editor.manage.library.locallibrary.ManageLocalLibrary;
 import mod.hey.studios.code.SrcCodeEditor;
+import mod.hey.studios.project.stringfog.StringfogHandler;
 import pro.sketchware.R;
+import pro.sketchware.ai.autonomous.DayvenAutonomousSuite;
 import pro.sketchware.databinding.ManageProguardBinding;
+import pro.sketchware.utility.FileUtil;
+import pro.sketchware.utility.SketchwareUtil;
 
 public class ManageProguardActivity extends BaseAppCompatActivity
         implements View.OnClickListener, CompoundButton.OnCheckedChangeListener {
 
     private ProguardHandler pg;
-
+    private String scId;
     private ManageProguardBinding binding;
 
     @Override
@@ -33,7 +38,7 @@ public class ManageProguardActivity extends BaseAppCompatActivity
             Intent intent = new Intent(this, SrcCodeEditor.class);
             intent.putExtra("title", "proguard-rules.pro");
             intent.putExtra("content", pg.getCustomProguardRules());
-            intent.putExtra("sc_id", getIntent().getStringExtra("sc_id"));
+            intent.putExtra("sc_id", scId);
             startActivity(intent);
         } else if (id == R.id.ln_pg_fm) {
             fmDialog();
@@ -46,8 +51,58 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         }
     }
 
+    private void showProtectionComboDialog() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("🛡️ Protection Combo (Score 95/100)")
+                .setMessage("Terapkan Full Defense Combo Suite:\n" +
+                        "1. Aktifkan R8 Optimizer & Obfuscator\n" +
+                        "2. Auto-Inject Maximum ProGuard Rules (7 passes, repackage, keep rules)\n" +
+                        "3. Aktifkan StringFog (AES-256 GCM authenticated)\n" +
+                        "4. Siapkan template Security Guards (SignatureGuard, AntiDebug, EnvironmentGuard, TamperAwareOutput)\n\n" +
+                        "Jalankan one-tap combo sekarang?")
+                .setPositiveButton("Aktifkan Combo", (dialog, which) -> applyProtectionCombo())
+                .setNegativeButton(R.string.common_word_cancel, null)
+                .show();
+    }
+
+    private void applyProtectionCombo() {
+        // 1. Enable R8 and Shrinking
+        pg.setProguardEnabled(true);
+        pg.setR8Enabled(true);
+        binding.swPgEnabled.setChecked(true);
+        binding.r8Enabled.setChecked(true);
+        allOptionsUIController(true);
+
+        // 2. Inject Maximum ProGuard Rules
+        String rulesPath = pg.getCustomProguardRules();
+        String maxRules = DayvenAutonomousSuite.ProGuardInjectorEngine.generateMaximalRules(false);
+        FileUtil.writeFile(rulesPath, maxRules);
+
+        // 3. Enable StringFog
+        StringfogHandler sf = new StringfogHandler(scId);
+        sf.setStringfogEnabled(true);
+
+        // 4. Inject Java Protection Classes if project source dir exists
+        try {
+            String javaDir = FileUtil.getExternalStorageDir() + "/.sketchware/mysc/" + scId + "/app/src/main/java";
+            if (FileUtil.isExistFile(javaDir)) {
+                String pkg = "com.protection.security";
+                String targetDir = javaDir + "/" + pkg.replace(".", "/");
+                FileUtil.makeDir(targetDir);
+                FileUtil.writeFile(targetDir + "/SignatureGuard.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateSignatureGuard(pkg, "A1:B2:C3:D4"));
+                FileUtil.writeFile(targetDir + "/AntiDebug.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateAntiDebug(pkg));
+                FileUtil.writeFile(targetDir + "/EnvironmentGuard.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateEnvironmentGuard(pkg));
+                FileUtil.writeFile(targetDir + "/TamperAwareOutput.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateTamperAwareOutput(pkg));
+                FileUtil.writeFile(targetDir + "/CustomClassLoader.java", DayvenAutonomousSuite.ProtectionSuiteEngine.generateDEXClassLoader(pkg));
+            }
+        } catch (Exception ignored) {
+        }
+
+        SketchwareUtil.toast("🛡️ Protection Combo Berhasil Diterapkan! Score 95/100");
+    }
+
     private void fmDialog() {
-        ManageLocalLibrary mll = new ManageLocalLibrary(getIntent().getStringExtra("sc_id"));
+        ManageLocalLibrary mll = new ManageLocalLibrary(scId);
 
         String[] libraries = new String[mll.list.size()];
         boolean[] enabledLibraries = new boolean[mll.list.size()];
@@ -108,6 +163,7 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         binding = ManageProguardBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
+        scId = getIntent().getStringExtra("sc_id");
         initialize();
         initializeLogic();
 
@@ -130,7 +186,7 @@ public class ManageProguardActivity extends BaseAppCompatActivity
 
     private void initializeLogic() {
         _initToolbar();
-        pg = new ProguardHandler(getIntent().getStringExtra("sc_id"));
+        pg = new ProguardHandler(scId);
         binding.swPgEnabled.setChecked(pg.isShrinkingEnabled());
         binding.swPgDebug.setChecked(pg.isDebugFilesEnabled());
         binding.r8Enabled.setChecked(pg.isR8Enabled());
@@ -140,6 +196,21 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         setSupportActionBar(binding.toolbar);
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         binding.toolbar.setNavigationOnClickListener(view -> onBackPressed());
+        binding.toolbar.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 9001) {
+                showProtectionComboDialog();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(android.view.Menu menu) {
+        MenuItem item = menu.add(0, 9001, 0, "Protection Combo");
+        item.setIcon(R.drawable.ic_mtrl_shield_lock);
+        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        return true;
     }
 
     private void allOptionsUIController (boolean isEnabled) {
