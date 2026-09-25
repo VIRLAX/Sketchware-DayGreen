@@ -272,6 +272,17 @@ public class ProjectBuilder {
         return classpath.toString();
     }
 
+    private boolean isValidZipOrJar(File file) {
+        if (!file.exists() || !file.isFile() || file.length() < 22) {
+            return false;
+        }
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(file)) {
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public String getProguardClasspath() {
         Collection<String> localLibraryJarsWithFullModeOn = new LinkedList<>();
 
@@ -291,6 +302,15 @@ public class ProjectBuilder {
         StringBuilder classpath = new StringBuilder();
         normalClasspathLoop:
         for (String classpathPart : normalClasspath.split(":")) {
+            if (classpathPart == null || classpathPart.trim().isEmpty()) {
+                continue;
+            }
+            File cpFile = new File(classpathPart);
+            if (classpathPart.endsWith(".jar") && !isValidZipOrJar(cpFile)) {
+                LogUtil.w(TAG, "Skipping invalid or empty classpath JAR: " + classpathPart);
+                continue;
+            }
+
             for (String jarPathToExclude : localLibraryJarsWithFullModeOn) {
                 if (classpathPart.equals(jarPathToExclude)) {
                     localLibraryJarsWithFullModeOn.remove(jarPathToExclude);
@@ -304,7 +324,9 @@ public class ProjectBuilder {
         }
 
         // remove trailing delimiter
-        classpath.deleteCharAt(classpath.length() - 1);
+        if (classpath.length() > 0 && classpath.charAt(classpath.length() - 1) == ':') {
+            classpath.deleteCharAt(classpath.length() - 1);
+        }
 
         return classpath.toString();
     }
@@ -536,6 +558,10 @@ public class ProjectBuilder {
     }
 
     private File filterMultiplatformJunkFromJar(File originalJar) {
+        if (!isValidZipOrJar(originalJar)) {
+            LogUtil.w(TAG, "Skipping filtering non-zip/empty JAR: " + originalJar.getAbsolutePath());
+            return originalJar;
+        }
         try {
             File filteredJar = new File(context.getCacheDir(), "filtered_" + originalJar.getName());
             try (java.util.zip.ZipFile zipIn = new java.util.zip.ZipFile(originalJar);
@@ -589,12 +615,18 @@ public class ProjectBuilder {
             ApkBuilder apkBuilder = new ApkBuilder(new File(yq.unsignedUnalignedApkPath), new File(yq.resourcesApkPath), new File(firstDexPath), null, null, System.out);
 
             for (Jp library : builtInLibraryManager.getLibraries()) {
-                apkBuilder.addResourcesFromJar(filterMultiplatformJunkFromJar(BuiltInLibraries.getLibraryClassesJarPath(library.getName())));
+                File libJar = BuiltInLibraries.getLibraryClassesJarPath(library.getName());
+                if (isValidZipOrJar(libJar)) {
+                    apkBuilder.addResourcesFromJar(filterMultiplatformJunkFromJar(libJar));
+                }
             }
 
             for (String jarPath : mll.getJarLocalLibrary().split(":")) {
                 if (!jarPath.trim().isEmpty()) {
-                    apkBuilder.addResourcesFromJar(filterMultiplatformJunkFromJar(new File(jarPath)));
+                    File localJar = new File(jarPath);
+                    if (isValidZipOrJar(localJar)) {
+                        apkBuilder.addResourcesFromJar(filterMultiplatformJunkFromJar(localJar));
+                    }
                 }
             }
 
@@ -671,7 +703,10 @@ public class ProjectBuilder {
 
                 if (localLibraryDexPath instanceof String) {
                     if (!proguard.libIsProguardFMEnabled((String) localLibraryName)) {
-                        dexes.add(new File((String) localLibraryDexPath));
+                        File dexFile = new File((String) localLibraryDexPath);
+                        if (dexFile.exists() && dexFile.isFile() && dexFile.length() > 0) {
+                            dexes.add(dexFile);
+                        }
                         /* Add library's extra DEX files */
                         File localLibraryDirectory = new File((String) localLibraryDexPath).getParentFile();
 
@@ -683,7 +718,8 @@ public class ProjectBuilder {
                                     String filename = localLibraryFile.getName();
 
                                     if (!filename.equals("classes.dex")
-                                            && filename.startsWith("classes") && filename.endsWith(".dex")) {
+                                            && filename.startsWith("classes") && filename.endsWith(".dex")
+                                            && localLibraryFile.length() > 0) {
                                         dexes.add(localLibraryFile);
                                     }
                                 }
@@ -699,12 +735,17 @@ public class ProjectBuilder {
         }
 
         for (String file : FileUtil.listFiles(yq.binDirectoryPath + File.separator + "dex", "dex")) {
-            dexes.add(new File(file));
+            File dFile = new File(file);
+            if (dFile.exists() && dFile.isFile() && dFile.length() > 0) {
+                dexes.add(dFile);
+            }
         }
 
         LogUtil.d(TAG, "Will merge these " + dexes.size() + " DEX files to classes.dex: " + dexes);
 
-        dexLibraries(new File(yq.binDirectoryPath), dexes);
+        if (!dexes.isEmpty()) {
+            dexLibraries(new File(yq.binDirectoryPath), dexes);
+        }
         LogUtil.d(TAG, "Merging DEX files took " + (System.currentTimeMillis() - savedTimeMillis) + " ms");
     }
 
@@ -874,7 +915,13 @@ public class ProjectBuilder {
         for (HashMap<String, Object> hashMap : mll.list) {
             String obj = hashMap.get("name").toString();
             if (hashMap.containsKey("jarPath") && proguard.libIsProguardFMEnabled(obj)) {
-                jars.add(hashMap.get("jarPath").toString());
+                String jarPath = hashMap.get("jarPath").toString();
+                File jarFile = new File(jarPath);
+                if (isValidZipOrJar(jarFile)) {
+                    jars.add(jarPath);
+                } else {
+                    LogUtil.w(TAG, "Skipping invalid/empty Full Mode JAR for R8: " + jarPath);
+                }
             }
         }
         try {
@@ -914,8 +961,14 @@ public class ProjectBuilder {
         for (HashMap<String, Object> hashMap : mll.list) {
             String obj = hashMap.get("name").toString();
             if (hashMap.containsKey("jarPath") && proguard.libIsProguardFMEnabled(obj)) {
-                args.add("-injars");
-                args.add(hashMap.get("jarPath").toString());
+                String jarPath = hashMap.get("jarPath").toString();
+                File jarFile = new File(jarPath);
+                if (isValidZipOrJar(jarFile)) {
+                    args.add("-injars");
+                    args.add(jarPath);
+                } else {
+                    LogUtil.w(TAG, "Skipping invalid/empty Full Mode JAR for ProGuard: " + jarPath);
+                }
             }
         }
         args.add("-libraryjars");
