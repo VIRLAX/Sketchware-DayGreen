@@ -19,7 +19,7 @@ import mod.agus.jcoderz.editor.manage.library.locallibrary.ManageLocalLibrary;
 import mod.hey.studios.code.SrcCodeEditor;
 import mod.hey.studios.project.stringfog.StringfogHandler;
 import pro.sketchware.R;
-import pro.sketchware.ai.autonomous.DayvenAutonomousSuite;
+import pro.sketchware.editor.DayvenAutonomousSuite;
 import pro.sketchware.databinding.ManageProguardBinding;
 import pro.sketchware.utility.FileUtil;
 import pro.sketchware.utility.SketchwareUtil;
