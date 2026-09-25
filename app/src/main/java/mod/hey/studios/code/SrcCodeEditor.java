@@ -113,7 +113,7 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     public static String prettifyXml(String x, int i, Intent e) { return x == null ? null : x.trim(); }
     public static void a(StringBuilder b, int n) { for (int i = 0; i < n; i++) b.append('\t'); }
     public static void showSwitchThemeDialog(Activity a, CodeEditor e, DialogInterface.OnClickListener l) { new MaterialAlertDialogBuilder(a).setTitle("Select Theme").setSingleChoiceItems(new String[]{"Default (Dynamic)", "GitHub Light", "GitHub Dark", "Eclipse", "VS2019", "NotepadXX"}, 0, l).setNegativeButton(R.string.common_word_cancel, null).show(); }
-    public static void showSwitchLanguageDialog(Activity a, CodeEditor e, DialogInterface.OnClickListener l) { new MaterialAlertDialogBuilder(a).setTitle("Select Language").setSingleChoiceItems(new CharSequence[]{"Java", "Kotlin", "XML"}, languageId, l).setNegativeButton(R.string.common_word_cancel, null).show(); }
+    public static void showSwitchLanguageDialog(Activity a, CodeEditor e, DialogInterface.OnClickListener l) { new MaterialAlertDialogBuilder(a).setTitle("Select Language").setSingleChoiceItems(new CharSequence[]{"Java", "Kotlin", "XML", "ProGuard / Plain"}, languageId, l).setNegativeButton(R.string.common_word_cancel, null).show(); }
 
     @Override public void onCreate(@Nullable Bundle s) {
         enableEdgeToEdgeNoContrast(); super.onCreate(s);
@@ -144,9 +144,45 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     private void buildFileTabs() { binding.fileTabs.removeAllViews(); if (fromAndroidManifest || currentPath == null || currentTitle == null || (!currentTitle.endsWith(".java") && !currentTitle.endsWith(".kt"))) { binding.tabScroll.setVisibility(View.GONE); return; } File parent = new File(currentPath).getParentFile(); File[] files = parent == null ? null : parent.listFiles(f -> f.isFile() && (f.getName().endsWith(".java") || f.getName().endsWith(".kt"))); if (files == null || files.length < 2) { binding.tabScroll.setVisibility(View.GONE); return; } Arrays.sort(files, (a, b) -> a.getName().compareToIgnoreCase(b.getName())); binding.tabScroll.setVisibility(View.VISIBLE); for (File f : files) { TextView tab = new TextView(this); tab.setText(f.getName()); tab.setTextSize(13); tab.setSingleLine(true); tab.setGravity(17); tab.setPadding(28, 0, 28, 0); tab.setMinWidth(120); tab.setOnClickListener(v -> switchTab(f)); binding.fileTabs.addView(tab); } updateTabStyles(); }
     private void updateTabStyles() { for (int i = 0; i < binding.fileTabs.getChildCount(); i++) { TextView tab = (TextView) binding.fileTabs.getChildAt(i); boolean selected = tab.getText().toString().equals(currentTitle); tab.setBackgroundColor(selected ? 0xFF263238 : 0xFF172024); tab.setTextColor(selected ? 0xFF42A5F5 : 0xFF90A4AE); } }
     private void switchTab(File f) { if (f.getAbsolutePath().equals(currentPath)) return; workingContents.put(currentPath, binding.editor.getText().toString()); currentPath = f.getAbsolutePath(); currentTitle = f.getName(); liveKey = makeLiveKey(); beforeContent = FileUtil.readFile(currentPath); binding.editor.setText(workingContents.containsKey(currentPath) ? workingContents.get(currentPath) : beforeContent); publishLiveSource(binding.editor.getText().toString()); binding.toolbar.setTitle(currentTitle); loadLanguageForTitle(currentTitle); updateTabStyles(); lastAnalyzedSource = null; lastAnalyzedKind = null; refreshDiagnostics(); }
-    private void loadLanguageForTitle(String title) { if (title == null) return; if (fromAndroidManifest || title.endsWith(".xml")) { EditorUtils.loadXmlConfig(binding.editor, fromAndroidManifest ? "AndroidManifest.xml" : currentPath); languageId = 2; } else if (title.endsWith(".java")) { EditorUtils.loadJavaConfig(binding.editor); languageId = 0; } else if (title.endsWith(".kt")) { binding.editor.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN)); selectTheme(binding.editor, 0); languageId = 1; } else selectLanguage(binding.editor, 0); }
-    private RealtimeDiagnostics.Kind currentKind() { if (fromAndroidManifest || (currentTitle != null && currentTitle.endsWith(".xml"))) return RealtimeDiagnostics.Kind.XML; if (currentTitle != null && currentTitle.endsWith(".kt")) return RealtimeDiagnostics.Kind.KOTLIN; return RealtimeDiagnostics.Kind.JAVA; }
-    private void refreshDiagnostics() { if (binding == null || diagnosticsAdapter == null) return; RealtimeDiagnostics.Kind kind = currentKind(); String source = binding.editor.getText().toString(); if (source.equals(lastAnalyzedSource) && kind == lastAnalyzedKind) return; lastAnalyzedSource = source; lastAnalyzedKind = kind; List<RealtimeDiagnostics.Issue> issues = RealtimeDiagnostics.check(kind, source); binding.editor.setDiagnostics(issues); diagnosticsAdapter.submitList(new ArrayList<>(issues)); if (diagnosticsMenuItem != null) diagnosticsMenuItem.setTitle("Errors (" + issues.size() + ")"); }
+    private void loadLanguageForTitle(String title) {
+        if (title == null) return;
+        if (fromAndroidManifest || title.endsWith(".xml")) {
+            EditorUtils.loadXmlConfig(binding.editor, fromAndroidManifest ? "AndroidManifest.xml" : currentPath);
+            languageId = 2;
+        } else if (title.endsWith(".pro") || title.contains("proguard") || title.endsWith(".properties") || title.endsWith(".txt")) {
+            selectTheme(binding.editor, 0);
+            languageId = 3;
+        } else if (title.endsWith(".java")) {
+            EditorUtils.loadJavaConfig(binding.editor);
+            languageId = 0;
+        } else if (title.endsWith(".kt")) {
+            binding.editor.setEditorLanguage(CodeEditorLanguages.loadTextMateLanguage(CodeEditorLanguages.SCOPE_NAME_KOTLIN));
+            selectTheme(binding.editor, 0);
+            languageId = 1;
+        } else {
+            selectLanguage(binding.editor, 0);
+        }
+    }
+    private RealtimeDiagnostics.Kind currentKind() {
+        if (fromAndroidManifest || (currentTitle != null && currentTitle.endsWith(".xml"))) return RealtimeDiagnostics.Kind.XML;
+        if (currentTitle != null && (currentTitle.endsWith(".pro") || currentTitle.contains("proguard") || currentTitle.endsWith(".properties") || currentTitle.endsWith(".txt"))) {
+            return RealtimeDiagnostics.Kind.PROGUARD;
+        }
+        if (currentTitle != null && currentTitle.endsWith(".kt")) return RealtimeDiagnostics.Kind.KOTLIN;
+        return RealtimeDiagnostics.Kind.JAVA;
+    }
+    private void refreshDiagnostics() {
+        if (binding == null || diagnosticsAdapter == null) return;
+        RealtimeDiagnostics.Kind kind = currentKind();
+        String source = binding.editor.getText().toString();
+        if (source.equals(lastAnalyzedSource) && kind == lastAnalyzedKind) return;
+        lastAnalyzedSource = source;
+        lastAnalyzedKind = kind;
+        List<RealtimeDiagnostics.Issue> issues = RealtimeDiagnostics.check(kind, source);
+        binding.editor.setDiagnostics(issues);
+        diagnosticsAdapter.submitList(new ArrayList<>(issues));
+        if (diagnosticsMenuItem != null) diagnosticsMenuItem.setTitle("Errors (" + issues.size() + ")");
+    }
 
     private void loadToolbar() { Menu toolbarMenu = binding.toolbar.getMenu(); toolbarMenu.clear(); toolbarMenu.add(Menu.NONE, ACTION_UNDO, Menu.NONE, "Undo").setIcon(R.drawable.ic_mtrl_undo).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); toolbarMenu.add(Menu.NONE, ACTION_REDO, Menu.NONE, "Redo").setIcon(R.drawable.ic_mtrl_redo).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); toolbarMenu.add(Menu.NONE, ACTION_SAVE, Menu.NONE, "Save").setIcon(R.drawable.ic_mtrl_save).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); diagnosticsMenuItem = toolbarMenu.add(Menu.NONE, ACTION_DIAGNOSTICS, Menu.NONE, "Errors (0)"); diagnosticsMenuItem.setIcon(R.drawable.ic_mtrl_bug_report).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); if (isFileInLayoutFolder()) toolbarMenu.add(Menu.NONE, ACTION_LAYOUT_PREVIEW, Menu.NONE, "Layout Preview").setIcon(R.drawable.ic_floating_preview).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); toolbarMenu.add(Menu.NONE, Menu.NONE, Menu.NONE, "Find & Replace"); toolbarMenu.add(Menu.NONE, ACTION_WORD_WRAP, Menu.NONE, "Word wrap").setCheckable(true).setChecked(pref.getBoolean("act_ww", false)); toolbarMenu.add(Menu.NONE, ACTION_PRETTY_PRINT, Menu.NONE, "Pretty print"); toolbarMenu.add(Menu.NONE, ACTION_SELECT_LANGUAGE, Menu.NONE, "Select language"); toolbarMenu.add(Menu.NONE, ACTION_SELECT_THEME, Menu.NONE, "Select theme"); toolbarMenu.add(Menu.NONE, ACTION_AUTOCOMPLETE, Menu.NONE, "Auto complete").setCheckable(true).setChecked(pref.getBoolean("act_ac", true)); toolbarMenu.add(Menu.NONE, ACTION_SYMBOL_PAIR, Menu.NONE, "Auto complete symbol pair").setCheckable(true).setChecked(pref.getBoolean("act_acsp", true)); binding.toolbar.setOnMenuItemClickListener(item -> { int id = item.getItemId(); if (id == ACTION_UNDO) binding.editor.undo(); else if (id == ACTION_REDO) binding.editor.redo(); else if (id == ACTION_SAVE) save(); else if (id == ACTION_DIAGNOSTICS) binding.diagnosticsPanel.setVisibility(binding.diagnosticsPanel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE); else if (id == ACTION_LAYOUT_PREVIEW) toggleFloatingPreview(); else if (id == ACTION_WORD_WRAP) { item.setChecked(!item.isChecked()); binding.editor.setWordwrap(item.isChecked()); pref.edit().putBoolean("act_ww", item.isChecked()).apply(); } else if (id == ACTION_AUTOCOMPLETE) { item.setChecked(!item.isChecked()); binding.editor.getComponent(EditorAutoCompletion.class).setEnabled(item.isChecked()); pref.edit().putBoolean("act_ac", item.isChecked()).apply(); } else if (id == ACTION_SYMBOL_PAIR) { item.setChecked(!item.isChecked()); binding.editor.getProps().symbolPairAutoCompletion = item.isChecked(); pref.edit().putBoolean("act_acsp", item.isChecked()).apply(); } else if (id == ACTION_SELECT_LANGUAGE) showSwitchLanguageDialog(this, binding.editor, (dialog, which) -> { selectLanguage(binding.editor, which); dialog.dismiss(); lastAnalyzedSource = null; lastAnalyzedKind = null; refreshDiagnostics(); }); else if (id == ACTION_SELECT_THEME) showSwitchThemeDialog(this, binding.editor, (dialog, which) -> { selectTheme(binding.editor, which); dialog.dismiss(); }); return true; }); refreshDiagnostics(); }
     private void toggleFloatingPreview() { if (!isXmlFile()) { SketchwareUtil.toast("Floating Preview hanya tersedia untuk XML layout"); return; } if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) { SketchwareUtil.toast("Aktifkan izin tampil di atas aplikasi untuk memakai preview"); startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))); return; } if (FloatingPreviewService.isRunning()) FloatingPreviewService.stop(this); else FloatingPreviewService.showOrUpdate(this, binding.editor.getText().toString(), currentTitle, scId); }
