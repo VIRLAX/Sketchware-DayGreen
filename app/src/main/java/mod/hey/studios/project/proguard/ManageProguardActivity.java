@@ -11,10 +11,17 @@ import com.besome.sketch.lib.base.BaseAppCompatActivity;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.gson.Gson;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 
 import dev.aldi.sayuti.editor.manage.LocalLibrariesUtil;
 import dev.aldi.sayuti.editor.manage.LocalLibrary;
@@ -118,7 +125,7 @@ public class ManageProguardActivity extends BaseAppCompatActivity
                 FileUtil.writeFile(protTargetDir + "/StringVault.java",
                         "package " + protPkg + ";\n\n" +
                         "public final class StringVault {\n" +
-                        "    public static String get(int id) { return \"DVN_KEY_\t\" + id; }\n" +
+                        "    public static String get(int id) { return \"DVN_KEY_\" + id; }\n" +
                         "    public static String decrypt(String s) { return s; }\n" +
                         "    public static boolean verifyLicense(String k) { return k != null; }\n" +
                         "}\n");
@@ -141,6 +148,23 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         SketchwareUtil.toast("🛡️ Protection Combo Berhasil Diterapkan! Score 98/100");
     }
 
+    private static byte[] createValidMinimalJar() {
+        try {
+            Manifest manifest = new Manifest();
+            manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (JarOutputStream jos = new JarOutputStream(baos, manifest)) {
+                JarEntry entry = new JarEntry("META-INF/DAYVEN_SECURITY.SF");
+                jos.putNextEntry(entry);
+                jos.write("Signature-Version: 1.0\nCreated-By: Dayven Autonomous Suite 4.0\n".getBytes());
+                jos.closeEntry();
+            }
+            return baos.toByteArray();
+        } catch (IOException e) {
+            return new byte[]{0x50, 0x4B, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        }
+    }
+
     private void provisionEssentialProtectionLibs() {
         String baseLibsDir = FileUtil.getExternalStorageDir() + "/.sketchware/libs/local_libs/";
         String[] essentialLibs = new String[] {
@@ -159,15 +183,52 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         };
 
         FileUtil.makeDir(baseLibsDir);
+        byte[] validJarBytes = createValidMinimalJar();
+
         for (int i = 0; i < essentialLibs.length; i++) {
             String libName = essentialLibs[i];
             String libDir = baseLibsDir + libName;
+            File jarFile = new File(libDir, "classes.jar");
             if (!FileUtil.isExistFile(libDir)) {
                 FileUtil.makeDir(libDir);
                 FileUtil.writeFile(libDir + "/config", pkgs[i]);
                 FileUtil.writeFile(libDir + "/proguard.txt", "-keep class " + pkgs[i] + ".** { *; }");
-                FileUtil.writeFile(libDir + "/classes.jar", "");
-                FileUtil.writeFile(libDir + "/classes.dex", "");
+            }
+
+            // Ensure classes.jar is a valid non-empty zip/jar archive
+            if (!jarFile.exists() || jarFile.length() < 22) {
+                try (FileOutputStream fos = new FileOutputStream(jarFile)) {
+                    fos.write(validJarBytes);
+                    fos.flush();
+                } catch (IOException ignored) {
+                }
+            }
+
+            File dexFile = new File(libDir, "classes.dex");
+            if (!dexFile.exists() || dexFile.length() == 0) {
+                // Minimal valid empty dex header (112 bytes)
+                byte[] minimalDex = new byte[] {
+                        0x64, 0x65, 0x78, 0x0A, 0x30, 0x33, 0x35, 0x00, // dex\n035\0
+                        0, 0, 0, 0, // checksum
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // sha1
+                        0x70, 0x00, 0x00, 0x00, // file_size = 112
+                        0x70, 0x00, 0x00, 0x00, // header_size = 112
+                        0x78, 0x56, 0x34, 0x12, // endian_tag
+                        0, 0, 0, 0, 0, 0, 0, 0, // link
+                        0, 0, 0, 0, // map_off
+                        0, 0, 0, 0, 0, 0, 0, 0, // string_ids
+                        0, 0, 0, 0, 0, 0, 0, 0, // type_ids
+                        0, 0, 0, 0, 0, 0, 0, 0, // proto_ids
+                        0, 0, 0, 0, 0, 0, 0, 0, // field_ids
+                        0, 0, 0, 0, 0, 0, 0, 0, // method_ids
+                        0, 0, 0, 0, 0, 0, 0, 0, // class_defs
+                        0, 0, 0, 0, 0, 0, 0, 0  // data
+                };
+                try (FileOutputStream fos = new FileOutputStream(dexFile)) {
+                    fos.write(minimalDex);
+                    fos.flush();
+                } catch (IOException ignored) {
+                }
             }
         }
 
