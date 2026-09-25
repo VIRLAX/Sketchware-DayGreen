@@ -18,7 +18,7 @@ import org.json.JSONObject;
 import pro.sketchware.utility.FilePathUtil;
 
 /**
- * Dayven Autonomous Suite v4.0 — Universal Autonomous System (29 Systems & 13 Features):
+ * Dayven Autonomous Suite v4.0 — Universal Autonomous System (30 Systems & 13 Features):
  *
  * Implements:
  * - SISTEM 01: Shell Execution Engine (Akurat & Kontekstual: mkdir, touch, cat << EOF, wget/curl, gradlew, adb).
@@ -50,6 +50,7 @@ import pro.sketchware.utility.FilePathUtil;
  * - SISTEM 27: R8 Full Mode Auto-Library Resolver (core.jar, r8-mapping, BouncyCastle, AndroidX).
  * - SISTEM 28: One-Tap Combo Protection Activator (Sequential step-by-step guide).
  * - SISTEM 29: Build Error Predictor & Auto-Fix (ClassNotFoundException, StringFog BadPaddingException, Full Mode missing libs).
+ * - SISTEM 30: Compile-Time Full APK Encryption Engine (Auto-Encrypt DEX + Manifest Decoy + ARSC + StringVault + FlowGuard + AssetEncryptor).
  */
 public final class DayvenAutonomousSuite {
 
@@ -264,7 +265,7 @@ public final class DayvenAutonomousSuite {
                     "import javax.crypto.spec.GCMParameterSpec;\n" +
                     "import javax.crypto.spec.PBEKeySpec;\n" +
                     "import javax.crypto.spec.SecretKeySpec;\n" +
-                    "java.security.SecureRandom;\n" +
+                    "import java.security.SecureRandom;\n" +
                     "import android.util.Base64;\n\n" +
                     "public class StringEncryptor {\n" +
                     "    private static final byte[] SALT = {\n" +
@@ -489,6 +490,67 @@ public final class DayvenAutonomousSuite {
     }
 
     /**
+     * SISTEM 30: Compile-Time Full APK Encryption Engine (DexEncryptTask + Manifest Poisoning)
+     */
+    public static final class FullApkEncryptionEngine {
+        public static String generateDexEncryptGradleTask() {
+            return "// ============================================================\n" +
+                    "// SISTEM 30 — COMPILE-TIME FULL APK ENCRYPTION ENGINE\n" +
+                    "// ============================================================\n" +
+                    "import javax.crypto.Cipher\n" +
+                    "import javax.crypto.spec.GCMParameterSpec\n" +
+                    "import javax.crypto.spec.SecretKeySpec\n" +
+                    "import java.security.SecureRandom\n\n" +
+                    "def DEX_MASTER_KEY = [\n" +
+                    "    (byte)0x44,(byte)0x61,(byte)0x79,(byte)0x76,\n" +
+                    "    (byte)0x65,(byte)0x6E,(byte)0x5F,(byte)0x4B,\n" +
+                    "    (byte)0x45,(byte)0x59,(byte)0x5F,(byte)0x56,\n" +
+                    "    (byte)0x34,(byte)0x2E,(byte)0x30,(byte)0x5F,\n" +
+                    "    (byte)0x53,(byte)0x45,(byte)0x43,(byte)0x55,\n" +
+                    "    (byte)0x52,(byte)0x45,(byte)0x5F,(byte)0x32,\n" +
+                    "    (byte)0x30,(byte)0x32,(byte)0x34,(byte)0x5F,\n" +
+                    "    (byte)0x58,(byte)0x58,(byte)0x58,(byte)0x58\n" +
+                    "] as byte[]\n\n" +
+                    "afterEvaluate {\n" +
+                    "    android.applicationVariants.all { variant ->\n" +
+                    "        variant.assembleProvider.get().doLast {\n" +
+                    "            def dexDir = new File(\"${buildDir}/intermediates/dex/${variant.name}/mergeDex${variant.name.capitalize()}\")\n" +
+                    "            if (!dexDir.exists()) return\n\n" +
+                    "            dexDir.listFiles()?.each { dexFile ->\n" +
+                    "                if (!dexFile.name.endsWith('.dex')) return\n" +
+                    "                byte[] dexBytes = dexFile.bytes\n" +
+                    "                byte[] iv = new byte[12]\n" +
+                    "                new SecureRandom().nextBytes(iv)\n" +
+                    "                Cipher cipher = Cipher.getInstance('AES/GCM/NoPadding')\n" +
+                    "                SecretKeySpec keySpec = new SecretKeySpec(DEX_MASTER_KEY, 'AES')\n" +
+                    "                GCMParameterSpec paramSpec = new GCMParameterSpec(128, iv)\n" +
+                    "                cipher.init(Cipher.ENCRYPT_MODE, keySpec, paramSpec)\n" +
+                    "                byte[] encrypted = cipher.doFinal(dexBytes)\n" +
+                    "                byte[] magic = [(byte)0x44,(byte)0x56,(byte)0x4E,(byte)0x58]\n" +
+                    "                byte[] combined = new byte[4 + 12 + encrypted.length]\n" +
+                    "                System.arraycopy(magic, 0, combined, 0, 4)\n" +
+                    "                System.arraycopy(iv, 0, combined, 4, 12)\n" +
+                    "                System.arraycopy(encrypted, 0, combined, 16, encrypted.length)\n" +
+                    "                def assetsDir = new File(\"${projectDir}/src/main/assets/dex\")\n" +
+                    "                assetsDir.mkdirs()\n" +
+                    "                def encFile = new File(assetsDir, dexFile.name.replace('.dex', '.dvnx'))\n" +
+                    "                encFile.bytes = combined\n" +
+                    "            }\n" +
+                    "        }\n" +
+                    "    }\n" +
+                    "}\n";
+        }
+
+        public static String generateManifestPoisonDecoy() {
+            return "<!-- Decoy metadata for anti-analysis output poisoning -->\n" +
+                    "<meta-data android:name=\"com.google.android.gms.version\" android:value=\"@integer/google_play_services_version\"/>\n" +
+                    "<meta-data android:name=\"com.facebook.sdk.ApplicationId\" android:value=\"@string/facebook_app_id\"/>\n" +
+                    "<meta-data android:name=\"io.flutter.embedding.android.NormalTheme\" android:resource=\"@style/NormalTheme\"/>\n" +
+                    "<meta-data android:name=\"com.unity3d.player.UnityPlayerActivity\" android:value=\"true\"/>\n";
+        }
+    }
+
+    /**
      * SISTEM 26: Full Maximum Protection ProGuard Rules
      */
     public static final class ProGuardInjectorEngine {
@@ -530,6 +592,14 @@ public final class DayvenAutonomousSuite {
             sb.append("-keepclassmembers class **.CustomClassLoader { *; }\n");
             sb.append("-keep class **.StringEncryptor { *; }\n");
             sb.append("-keepclassmembers class **.StringEncryptor { *; }\n");
+            sb.append("-keep class **.DayvenClassLoader { *; }\n");
+            sb.append("-keepclassmembers class **.DayvenClassLoader { *; }\n");
+            sb.append("-keep class **.StringVault { *; }\n");
+            sb.append("-keepclassmembers class **.StringVault { *; }\n");
+            sb.append("-keep class **.FlowGuard { *; }\n");
+            sb.append("-keepclassmembers class **.FlowGuard { *; }\n");
+            sb.append("-keep class **.AssetEncryptor { *; }\n");
+            sb.append("-keepclassmembers class **.AssetEncryptor { *; }\n");
             sb.append("# === CRYPTO PROVIDER ===\n");
             sb.append("-keep class javax.crypto.** { *; }\n");
             sb.append("-keep class java.security.** { *; }\n");
@@ -766,11 +836,11 @@ public final class DayvenAutonomousSuite {
     /** UI Theme Tokens Compiler */
     public static final class ThemeTokensCompiler {
         public static String compileColorXml(Map<String, String> colorMap) {
-            StringBuilder sb = new StringBuilder("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n");
+            StringBuilder sb = new StringBuilder("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n&lt;resources>\n");
             for (Map.Entry<String, String> e : colorMap.entrySet()) {
                 sb.append("    <color name=\"").append(e.getKey()).append("\">").append(e.getValue()).append("</color>\n");
             }
-            sb.append("</resources>");
+            sb.append("&lt;/resources>");
             return sb.toString();
         }
     }
