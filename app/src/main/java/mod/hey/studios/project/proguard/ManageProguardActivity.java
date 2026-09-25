@@ -2,6 +2,8 @@ package mod.hey.studios.project.proguard;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.CompoundButton;
 
@@ -26,6 +28,7 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         implements View.OnClickListener, CompoundButton.OnCheckedChangeListener {
 
     private ProguardHandler pg;
+    private StringfogHandler sf;
     private String scId;
     private ManageProguardBinding binding;
 
@@ -48,17 +51,21 @@ public class ManageProguardActivity extends BaseAppCompatActivity
             binding.r8Enabled.setChecked(!binding.r8Enabled.isChecked());
         } else if (id == R.id.ln_sw_pg_debug) {
             binding.swPgDebug.setChecked(!binding.swPgDebug.isChecked());
+        } else if (id == R.id.ln_stringfog_enabled) {
+            binding.swStringfogEnabled.setChecked(!binding.swStringfogEnabled.isChecked());
+        } else if (id == R.id.ln_combo_click || id == R.id.btn_activate_combo) {
+            showProtectionComboDialog();
         }
     }
 
     private void showProtectionComboDialog() {
         new MaterialAlertDialogBuilder(this)
                 .setTitle("🛡️ Protection Combo (Score 95/100)")
-                .setMessage("Terapkan Full Defense Combo Suite:\n" +
+                .setMessage("Terapkan Full Defense Combo Suite:\n\n" +
                         "1. Aktifkan R8 Optimizer & Obfuscator\n" +
                         "2. Auto-Inject Maximum ProGuard Rules (7 passes, repackage, keep rules)\n" +
                         "3. Aktifkan StringFog (AES-256 GCM authenticated)\n" +
-                        "4. Siapkan template Security Guards (SignatureGuard, AntiDebug, EnvironmentGuard, TamperAwareOutput)\n\n" +
+                        "4. Injeksi Security Guards (SignatureGuard, AntiDebug, EnvironmentGuard, TamperAwareOutput, CustomClassLoader)\n\n" +
                         "Jalankan one-tap combo sekarang?")
                 .setPositiveButton("Aktifkan Combo", (dialog, which) -> applyProtectionCombo())
                 .setNegativeButton(R.string.common_word_cancel, null)
@@ -78,9 +85,11 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         String maxRules = DayvenAutonomousSuite.ProGuardInjectorEngine.generateMaximalRules(false);
         FileUtil.writeFile(rulesPath, maxRules);
 
-        // 3. Enable StringFog
-        StringfogHandler sf = new StringfogHandler(scId);
-        sf.setStringfogEnabled(true);
+        // 3. Enable StringFog directly
+        if (sf != null) {
+            sf.setStringfogEnabled(true);
+            binding.swStringfogEnabled.setChecked(true);
+        }
 
         // 4. Inject Java Protection Classes if project source dir exists
         try {
@@ -153,6 +162,10 @@ public class ManageProguardActivity extends BaseAppCompatActivity
             pg.setR8Enabled(isChecked);
         } else if (id == binding.swPgDebug.getId()) {
             pg.setDebugEnabled(isChecked);
+        } else if (id == binding.swStringfogEnabled.getId()) {
+            if (sf != null) {
+                sf.setStringfogEnabled(isChecked);
+            }
         }
     }
 
@@ -182,14 +195,22 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         binding.lnPgEnabled.setOnClickListener(this);
         binding.lnR8Enabled.setOnClickListener(this);
         binding.lnSwPgDebug.setOnClickListener(this);
+
+        binding.lnStringfogEnabled.setOnClickListener(this);
+        binding.swStringfogEnabled.setOnCheckedChangeListener(this);
+        binding.lnComboClick.setOnClickListener(this);
+        binding.btnActivateCombo.setOnClickListener(this);
     }
 
     private void initializeLogic() {
         _initToolbar();
         pg = new ProguardHandler(scId);
+        sf = new StringfogHandler(scId);
+
         binding.swPgEnabled.setChecked(pg.isShrinkingEnabled());
         binding.swPgDebug.setChecked(pg.isDebugFilesEnabled());
         binding.r8Enabled.setChecked(pg.isR8Enabled());
+        binding.swStringfogEnabled.setChecked(sf.isStringfogEnabled());
     }
 
     private void _initToolbar() {
@@ -206,14 +227,14 @@ public class ManageProguardActivity extends BaseAppCompatActivity
     }
 
     @Override
-    public boolean onCreateOptionsMenu(android.view.Menu menu) {
+    public boolean onCreateOptionsMenu(Menu menu) {
         MenuItem item = menu.add(0, 9001, 0, "Protection Combo");
         item.setIcon(R.drawable.ic_mtrl_shield_lock);
         item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         return true;
     }
 
-    private void allOptionsUIController (boolean isEnabled) {
+    private void allOptionsUIController(boolean isEnabled) {
         if (isEnabled) {
             binding.lnAllOptions.setAlpha(1f);
         } else {
@@ -226,5 +247,7 @@ public class ManageProguardActivity extends BaseAppCompatActivity
         binding.swPgDebug.setEnabled(isEnabled);
         binding.lnR8Enabled.setEnabled(isEnabled);
         binding.lnSwPgDebug.setEnabled(isEnabled);
+        binding.lnStringfogEnabled.setEnabled(isEnabled);
+        binding.swStringfogEnabled.setEnabled(isEnabled);
     }
 }
