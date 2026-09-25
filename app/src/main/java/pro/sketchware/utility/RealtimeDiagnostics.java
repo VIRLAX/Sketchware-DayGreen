@@ -13,7 +13,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 
 /** Lightweight, safe diagnostics that can run while the user is typing. */
 public final class RealtimeDiagnostics {
-    public enum Kind { XML, JAVA, KOTLIN, BLOCKS }
+    public enum Kind { XML, JAVA, KOTLIN, BLOCKS, PROGUARD }
 
     public record Issue(
             Kind kind,
@@ -35,6 +35,12 @@ public final class RealtimeDiagnostics {
     public static List<Issue> check(Kind kind, String source) {
         List<Issue> issues = new ArrayList<>();
         if (source == null || source.trim().isEmpty()) {
+            return issues;
+        }
+
+        if (kind == Kind.PROGUARD) {
+            // ProGuard / R8 configuration rules - bypass Java code syntax checks
+            checkDelimiters(kind, source, issues);
             return issues;
         }
 
@@ -176,9 +182,9 @@ public final class RealtimeDiagnostics {
                 escaped = c == '\\' && !escaped;
                 continue;
             }
-            if (inChar) {
-                if (c == '\'' && !escaped) {
-                    inChar = false;
+            if (c == '\'' && kind != Kind.PROGUARD) {
+                if (!escaped) {
+                    inChar = !inChar;
                 }
                 escaped = c == '\\' && !escaped;
                 continue;
@@ -189,6 +195,10 @@ public final class RealtimeDiagnostics {
                 column++;
                 continue;
             }
+            if (c == '#' && (kind == Kind.PROGUARD || kind == Kind.BLOCKS)) {
+                lineComment = true;
+                continue;
+            }
             if (c == '/' && i + 1 < source.length() && source.charAt(i + 1) == '*') {
                 blockComment = true;
                 i++;
@@ -197,11 +207,6 @@ public final class RealtimeDiagnostics {
             }
             if (c == '"') {
                 inString = true;
-                escaped = false;
-                continue;
-            }
-            if (c == '\'') {
-                inChar = true;
                 escaped = false;
                 continue;
             }
