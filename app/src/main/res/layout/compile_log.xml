@@ -98,6 +98,15 @@
         android:orientation="horizontal">
 
         <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/copyButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="5dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="20dp"
+            android:src="@drawable/content_copy_24px" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/formatButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -117,4 +126,3 @@
 
     </LinearLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
-
