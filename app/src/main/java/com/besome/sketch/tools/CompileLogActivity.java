@@ -1,6 +1,8 @@
 package com.besome.sketch.tools;
 
 import android.annotation.SuppressLint;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
@@ -43,6 +45,18 @@ public class CompileLogActivity extends BaseAppCompatActivity {
         String sc_id = getIntent().getStringExtra("sc_id"); if (sc_id == null) { finish(); return; }
         compileErrorSaver = new CompileErrorSaver(sc_id);
         if (compileErrorSaver.logFileExists()) binding.clearButton.setOnClickListener(v -> { if (compileErrorSaver.logFileExists()) { compileErrorSaver.deleteSavedLogs(); getIntent().removeExtra("error"); SketchwareUtil.toast("Compile logs have been cleared."); } else SketchwareUtil.toast("No compile logs found."); setErrorText(); });
+
+        binding.copyButton.setOnClickListener(v -> {
+            CharSequence errorText = binding.tvCompileLog.getText();
+            if (errorText == null || errorText.length() == 0) {
+                SketchwareUtil.toast("No error log to copy.");
+                return;
+            }
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("Compile Log", errorText);
+            clipboard.setPrimaryClip(clip);
+            SketchwareUtil.toast("Compile error copied to clipboard! 📋");
+        });
 
         final String wrapTextLabel = "Wrap text", monospacedFontLabel = "Monospaced font", fontSizeLabel = "Font size";
         PopupMenu options = new PopupMenu(this, binding.formatButton);
