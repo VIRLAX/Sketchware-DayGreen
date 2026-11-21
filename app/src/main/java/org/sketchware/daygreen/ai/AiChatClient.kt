@@ -101,6 +101,7 @@ class AiChatClient(
         fun onError(error: String)
         fun onStatus(status: String)
         fun onThinking(thinking: String)
+        fun onTaskStep(stepTitle: String, isFinished: Boolean, detail: String?)
     }
 
     companion object {
@@ -115,20 +116,30 @@ class AiChatClient(
             .build()
 
         private const val DEFAULT_PROMPT =
-            "You are an expert Android & Sketchware AI developer assistant inside Sketchware DayGreen.\n" +
-            "Your task is to assist the user in designing layouts, writing logic code, adding blocks, generating files, fixing bugs, and compiling projects.\n" +
-            "GUIDELINES:\n" +
-            "1. CODE PRESENTATION: Always separate conversational explanations from source code. Place all code inside clear markdown code blocks with proper language identifiers (e.g. ```java, ```kotlin, ```xml). Ensure the code is complete, correct, and self-contained so the user can review and copy it cleanly.\n" +
-            "2. DIRECT ACTION: If the user commands you to apply, write, fix, or create something, directly invoke the corresponding tool.\n" +
-            "3. ACCURACY & CONCISENESS: Be direct, accurate, and avoid redundant filler sentences."
+            "You are an expert autonomous Android & Sketchware AI developer assistant inside Sketchware DayGreen.\n" +
+            "You possess native, complete understanding of Sketchware's filesystem, build system, and architecture:\n" +
+            "- Custom Java & Kotlin source files are located in .sketchware/data/{sc_id}/files/java/\n" +
+            "- Native C/C++ files are located in .sketchware/data/{sc_id}/files/native/\n" +
+            "- Custom Resources (layouts, drawables, values) are located in .sketchware/data/{sc_id}/files/resource/\n" +
+            "- Custom Assets are in .sketchware/data/{sc_id}/files/assets/\n" +
+            "- Project permissions are registered in .sketchware/data/{sc_id}/permission/list\n" +
+            "- Activities are managed via ProjectFileManager, layouts via ViewBeans, logic blocks via ProjectDataManager & AiBlockWriter.\n" +
+            "CORE PRINCIPLES:\n" +
+            "1. ACTION FIRST: When instructed to create, modify, add, fix, or examine, directly call the relevant tools. Do not ask for redundant clarification.\n" +
+            "2. CONCISE, CLEAN RESPONSES: Provide direct, clean responses. Deliver exact solutions and code without verbose introductions, fillers, or unrequested explanations.\n" +
+            "3. ACCURATE PATHING: Whenever creating or modifying files, rely on the intelligent project resolver. Custom classes go to files/java, native code to files/native, layouts to files/resource/layout."
 
         private const val RULES =
-            "\n\nAgent Rules & Capabilities:\n" +
-            "1. FILES & PROJECT: create_file, write_file, read_file, search_in_project, create_activity.\n" +
-            "2. LOGIC BLOCKS: list_event_keys, list_events, read_event_blocks, list_blocks, append_blocks, clear_event_blocks, propose_source_code.\n" +
-            "3. COMPONENTS & MANIFEST: add_component, add_variable, add_permission.\n" +
-            "4. LAYOUT: read_layout, add_widget, apply_layout_xml.\n" +
-            "5. DIAGNOSTICS & FIXING: get_compile_error, analyze_code_bug, fix_compile_error."
+            "\n\nCapabilities & Tool Catalog:\n" +
+            "- explore_project_structure: View complete realtime project files, activities, permissions, and assets.\n" +
+            "- create_file / write_file: Create or edit Java, Kotlin, C/C++, XML, or asset files in correct project folders.\n" +
+            "- read_file / delete_file: Read or delete project files.\n" +
+            "- search_in_project: Search keywords across all project source code.\n" +
+            "- create_activity: Create Activity with layout and registration.\n" +
+            "- add_permission / add_component / add_variable: Manage Android permissions, components, and variables.\n" +
+            "- list_blocks / list_event_keys / list_events / read_event_blocks / append_blocks / clear_event_blocks / propose_source_code: Full logic block automation across any event.\n" +
+            "- read_layout / add_widget / apply_layout_xml: Full UI layout automation.\n" +
+            "- get_compile_error / analyze_code_bug / fix_compile_error: Automatic build diagnostics and bug repair."
     }
 
     init {
@@ -250,14 +261,39 @@ class AiChatClient(
                     val call = calls.getJSONObject(i)
                     val fn = call.getJSONObject("function")
                     val name = fn.getString("name")
-                    callback.onStatus("Executing $name...")
+                    val argsObj = JSONObject(fn.getString("arguments"))
+
+                    val stepTitle = when (name) {
+                        "create_file" -> "Create file: ${argsObj.optString("path")}"
+                        "write_file" -> "Modify file: ${argsObj.optString("path")}"
+                        "read_file" -> "Read file: ${argsObj.optString("path")}"
+                        "delete_file" -> "Delete file: ${argsObj.optString("path")}"
+                        "explore_project_structure" -> "Explore project structure"
+                        "search_in_project" -> "Search: ${argsObj.optString("query")}"
+                        "create_activity" -> "Create Activity: ${argsObj.optString("name")}"
+                        "add_permission" -> "Add permission: ${argsObj.optString("permission")}"
+                        "add_component" -> "Add component: ${argsObj.optString("type")}"
+                        "add_variable" -> "Add variable: ${argsObj.optString("name")}"
+                        "append_blocks" -> "Append blocks to ${argsObj.optString("event_key")}"
+                        "read_layout" -> "Read layout: ${argsObj.optString("xml_name")}"
+                        "add_widget" -> "Add widget: ${argsObj.optString("widget_type")}"
+                        "apply_layout_xml" -> "Apply layout XML"
+                        "get_compile_error" -> "Inspect compile error"
+                        "analyze_code_bug" -> "Analyze diagnostics"
+                        else -> "Execute $name"
+                    }
+
+                    callback.onTaskStep(stepTitle, false, null)
 
                     val result = try {
-                        execute(name, JSONObject(fn.getString("arguments")), proposals)
+                        execute(name, argsObj, proposals)
                     } catch (e: Exception) {
                         Log.e(TAG, "Tool '$name' failed", e)
-                        "Tool $name failed: ${e.message}. Check arguments and try again."
+                        "Tool $name failed: ${e.message}."
                     }
+
+                    val detail = if (result.length > 70) result.substring(0, 70) + "..." else result
+                    callback.onTaskStep(stepTitle, true, detail)
                     messages.put(toolMessage(call.getString("id"), result))
                 }
             }
@@ -279,6 +315,9 @@ class AiChatClient(
 
         return when (name) {
             // File & Project Operations
+            "explore_project_structure" -> {
+                AiProjectHelper.exploreProjectStructure(scId)
+            }
             "create_file" -> {
                 val path = args.getString("path")
                 val content = args.getString("content")
@@ -302,6 +341,10 @@ class AiChatClient(
             "read_file" -> {
                 val path = args.getString("path")
                 AiProjectHelper.readFile(scId, path)
+            }
+            "delete_file" -> {
+                val path = args.getString("path")
+                AiProjectHelper.deleteFile(scId, path).message
             }
             "search_in_project" -> {
                 val query = args.getString("query")
@@ -515,6 +558,8 @@ class AiChatClient(
         if (!store.isAgentToolsEnabled) return tools
 
         // 1. Files & Project
+        tools.put(tool("explore_project_structure", "Inspect realtime project tree, activities, custom Java/Kotlin/Native files, assets, and permissions.", JSONObject(), JSONArray()))
+
         val cfProps = JSONObject().put("path", JSONObject().put("type", "string").put("description", "File path, e.g. NetworkUtil.java, models/User.kt"))
             .put("content", JSONObject().put("type", "string").put("description", "Complete code content"))
         tools.put(tool("create_file", "Create a new source file (.java, .kt, .xml, .cpp).", cfProps, JSONArray().put("path").put("content")))
@@ -522,6 +567,9 @@ class AiChatClient(
 
         val rfProps = JSONObject().put("path", JSONObject().put("type", "string").put("description", "Relative file path"))
         tools.put(tool("read_file", "Read a file from project.", rfProps, JSONArray().put("path")))
+
+        val dfProps = JSONObject().put("path", JSONObject().put("type", "string").put("description", "Relative file path to delete"))
+        tools.put(tool("delete_file", "Delete a file from the project.", dfProps, JSONArray().put("path")))
 
         val spProps = JSONObject().put("query", JSONObject().put("type", "string").put("description", "Text or keyword to search across project"))
         tools.put(tool("search_in_project", "Search across project files.", spProps, JSONArray().put("query")))

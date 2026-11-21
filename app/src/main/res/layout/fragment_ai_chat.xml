@@ -258,6 +258,17 @@
                             app:tint="?attr/colorOnSurfaceVariant" />
 
                         <ImageButton
+                            android:id="@+id/btn_explorer"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:layout_marginStart="4dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="Project explorer"
+                            android:padding="5dp"
+                            android:src="@drawable/ic_mtrl_folder_code"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+
+                        <ImageButton
                             android:id="@+id/btn_settings"
                             android:layout_width="32dp"
                             android:layout_height="32dp"

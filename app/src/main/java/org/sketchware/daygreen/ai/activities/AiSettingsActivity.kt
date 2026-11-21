@@ -216,7 +216,7 @@ class AiSettingsActivity : BaseAppCompatActivity() {
         }
 
         binding.btnValidate.isEnabled = false
-        setTestStatus("Memeriksa status HTTP 200 OK ke server...", COLOR_NEUTRAL)
+        setTestStatus("Memeriksa API key & menguji respon model (HTTP 200 OK)...", COLOR_NEUTRAL)
 
         val rawInput = keys.joinToString("\n")
         AiConnectionTester.testMultiKeys(providerIndex, rawInput, object : AiConnectionTester.MultiKeyCallback {
@@ -227,40 +227,51 @@ class AiSettingsActivity : BaseAppCompatActivity() {
                 message: String
             ) {
                 mainHandler.post {
-                    binding.btnValidate.isEnabled = true
                     if (validKeys.isNotEmpty()) {
                         store.setApiKeys(providerIndex, validKeys)
                         store.setVerified(providerIndex, true)
-                        setTestStatus("● $message", COLOR_OK)
 
-                        // Animate confirmation feedback
-                        binding.tvTestStatus.animate()
-                            .scaleX(1.05f).scaleY(1.05f)
-                            .setDuration(180)
-                            .setInterpolator(AccelerateDecelerateInterpolator())
-                            .withEndAction {
-                                binding.tvTestStatus.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start()
-                            }
-                            .start()
-
-                        Toast.makeText(this@AiSettingsActivity, "Validasi Berhasil: $message", Toast.LENGTH_SHORT).show()
-
-                        // Automatically fetch & cache 200 OK models
                         val provider = AiProviders.ALL[providerIndex]
+                        setTestStatus("Key valid. Menguji model aktif (200 OK)...", COLOR_NEUTRAL)
+
+                        // Realtime 200 OK Ping test on all candidate models
                         AiModelFetcher.fetchWithStore(provider, store, providerIndex, object : AiModelFetcher.Callback {
                             override fun onResult(models: List<String>) {
                                 mainHandler.post {
+                                    binding.btnValidate.isEnabled = true
+                                    val statusText = "● ${validKeys.size} Key Aktif · ${models.size} Model Siap (200 OK)"
+                                    setTestStatus(statusText, COLOR_OK)
+
+                                    binding.tvTestStatus.animate()
+                                        .scaleX(1.05f).scaleY(1.05f)
+                                        .setDuration(180)
+                                        .setInterpolator(AccelerateDecelerateInterpolator())
+                                        .withEndAction {
+                                            binding.tvTestStatus.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start()
+                                        }
+                                        .start()
+
+                                    Toast.makeText(this@AiSettingsActivity, "Validasi Berhasil: ${models.size} model aktif (200 OK)", Toast.LENGTH_SHORT).show()
                                     refreshValues()
                                 }
                             }
-                            override fun onError(error: String) {}
+
+                            override fun onError(error: String) {
+                                mainHandler.post {
+                                    binding.btnValidate.isEnabled = true
+                                    setTestStatus("▲ Key valid tapi model limit/429: $error", COLOR_ERROR)
+                                    Toast.makeText(this@AiSettingsActivity, error, Toast.LENGTH_LONG).show()
+                                    refreshValues()
+                                }
+                            }
                         })
                     } else {
+                        binding.btnValidate.isEnabled = true
                         store.setVerified(providerIndex, false)
                         setTestStatus("✕ $message", COLOR_ERROR)
                         Toast.makeText(this@AiSettingsActivity, message, Toast.LENGTH_LONG).show()
+                        refreshValues()
                     }
-                    refreshValues()
                 }
             }
         })

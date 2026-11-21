@@ -16,8 +16,8 @@ object AiConnectionTester {
     }
 
     private val CLIENT = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
     @JvmStatic
@@ -109,7 +109,8 @@ object AiConnectionTester {
                 .header("anthropic-version", "2023-06-01")
                 .build()
             2 -> Request.Builder()
-                .url("https://generativelanguage.googleapis.com/v1beta/models")
+                .url("https://generativelanguage.googleapis.com/v1beta/openai/models")
+                .header("Authorization", "Bearer $apiKey")
                 .header("x-goog-api-key", apiKey)
                 .build()
             3 -> Request.Builder()
@@ -117,7 +118,7 @@ object AiConnectionTester {
                 .header("Authorization", "Bearer $apiKey")
                 .build()
             4 -> Request.Builder()
-                .url("https://openrouter.ai/api/v1/auth/key")
+                .url("https://openrouter.ai/api/v1/models")
                 .header("Authorization", "Bearer $apiKey")
                 .build()
             5 -> Request.Builder()

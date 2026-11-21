@@ -6,6 +6,9 @@ import android.util.Log
 import android.util.Pair
 import com.besome.sketch.beans.ComponentBean
 import com.besome.sketch.beans.ProjectFileBean
+import org.json.JSONArray
+import org.json.JSONObject
+import pro.sketchware.utility.FilePathUtil
 import pro.sketchware.utility.FileUtil
 import java.io.File
 import java.util.Locale
@@ -13,34 +16,101 @@ import java.util.Locale
 object AiProjectHelper {
 
     private const val TAG = "AiProjectHelper"
-    private const val MAX_READ_CHARS = 25000
+    private const val MAX_READ_CHARS = 30000
 
     data class Result(val success: Boolean, val message: String)
 
-    fun getProjectDir(scId: String): File {
-        return File(wq.d(scId))
+    private val pathUtil = FilePathUtil()
+
+    fun getProjectDataDir(scId: String): File {
+        return File(wq.b(scId)) // /.sketchware/data/{scId}
     }
 
-    fun getDataDir(scId: String): File {
-        return File(wq.b(scId))
+    fun getJavaDir(scId: String): File {
+        return File(pathUtil.getPathJava(scId)) // /.sketchware/data/{scId}/files/java
     }
 
+    fun getNativeDir(scId: String): File {
+        return File(pathUtil.getPathNative(scId)) // /.sketchware/data/{scId}/files/native
+    }
+
+    fun getResourceDir(scId: String): File {
+        return File(pathUtil.getPathResource(scId)) // /.sketchware/data/{scId}/files/resource
+    }
+
+    fun getAssetsDir(scId: String): File {
+        return File(pathUtil.getPathAssets(scId)) // /.sketchware/data/{scId}/files/assets
+    }
+
+    fun getPermissionDir(scId: String): File {
+        return File(pathUtil.getPathPermission(scId)) // /.sketchware/data/{scId}/permission
+    }
+
+    /**
+     * Intelligently resolves file paths matching Sketchware's true project architecture.
+     * Custom Java/Kotlin files belong in files/java, C/C++ in files/native, layouts in files/resource/layout, etc.
+     */
     fun resolveFile(scId: String, relativePath: String): File {
         val clean = relativePath.trim().removePrefix("/").removePrefix("./")
-        val base = getProjectDir(scId)
-        val file = File(base, clean)
-        if (file.exists()) return file
+        val lower = clean.lowercase(Locale.ROOT)
 
-        val inApp = File(base, "app/src/main/$clean")
-        if (inApp.exists()) return inApp
+        val javaBase = getJavaDir(scId)
+        val nativeBase = getNativeDir(scId)
+        val resBase = getResourceDir(scId)
+        val assetsBase = getAssetsDir(scId)
+        val dataBase = getProjectDataDir(scId)
 
-        val inJava = File(base, "app/src/main/java/$clean")
-        if (inJava.exists()) return inJava
+        // 1. Direct checks if file already exists in any valid folder
+        val directInJava = File(javaBase, clean)
+        if (directInJava.exists()) return directInJava
 
-        val inData = File(getDataDir(scId), clean)
-        if (inData.exists()) return inData
+        val directInNative = File(nativeBase, clean)
+        if (directInNative.exists()) return directInNative
 
-        return file
+        val directInRes = File(resBase, clean)
+        if (directInRes.exists()) return directInRes
+
+        val directInAssets = File(assetsBase, clean)
+        if (directInAssets.exists()) return directInAssets
+
+        val directInData = File(dataBase, clean)
+        if (directInData.exists()) return directInData
+
+        // 2. Intelligent placement by file extension & type
+        if (lower.startsWith("files/java/") || lower.startsWith("java/")) {
+            val sub = clean.removePrefix("files/java/").removePrefix("java/")
+            return File(javaBase, sub)
+        }
+        if (lower.endsWith(".java") || lower.endsWith(".kt")) {
+            return File(javaBase, clean)
+        }
+
+        if (lower.startsWith("files/native/") || lower.startsWith("native/") || lower.startsWith("cpp/")) {
+            val sub = clean.removePrefix("files/native/").removePrefix("native/").removePrefix("cpp/")
+            return File(nativeBase, sub)
+        }
+        if (lower.endsWith(".c") || lower.endsWith(".cpp") || lower.endsWith(".h") || lower.endsWith(".hpp")) {
+            return File(nativeBase, clean)
+        }
+
+        if (lower.startsWith("files/assets/") || lower.startsWith("assets/")) {
+            val sub = clean.removePrefix("files/assets/").removePrefix("assets/")
+            return File(assetsBase, sub)
+        }
+
+        if (lower.startsWith("files/resource/") || lower.startsWith("resource/") || lower.startsWith("res/")) {
+            val sub = clean.removePrefix("files/resource/").removePrefix("resource/").removePrefix("res/")
+            return File(resBase, sub)
+        }
+        if (lower.endsWith(".xml")) {
+            return File(resBase, if (lower.startsWith("layout/")) clean else "layout/$clean")
+        }
+
+        if (lower == "permission" || lower == "permissions" || lower == "permission/list") {
+            return File(getPermissionDir(scId), "list")
+        }
+
+        return File(javaBase, clean)
     }
 
     fun createFile(scId: String, relativePath: String, content: String): Result {
@@ -51,10 +121,30 @@ object AiProjectHelper {
             val target = resolveFile(scId, relativePath)
             target.parentFile?.mkdirs()
             FileUtil.writeFile(target.absolutePath, content)
-            Result(true, "File created successfully at ${target.name}")
+            val relDisplay = target.absolutePath.substringAfter(getProjectDataDir(scId).absolutePath).removePrefix("/")
+            Result(true, "Created: $relDisplay (${content.length} chars)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create file: $relativePath", e)
             Result(false, "Failed to create file: ${e.message}")
+        }
+    }
+
+    fun writeFile(scId: String, relativePath: String, content: String): Result {
+        return createFile(scId, relativePath, content)
+    }
+
+    fun deleteFile(scId: String, relativePath: String): Result {
+        if (scId.isEmpty()) return Result(false, "Project ID is required.")
+        val target = resolveFile(scId, relativePath)
+        return try {
+            if (target.exists()) {
+                val ok = target.delete()
+                if (ok) Result(true, "Deleted: ${target.name}") else Result(false, "Failed to delete ${target.name}")
+            } else {
+                Result(false, "File '${target.name}' not found.")
+            }
+        } catch (e: Exception) {
+            Result(false, "Delete error: ${e.message}")
         }
     }
 
@@ -62,13 +152,13 @@ object AiProjectHelper {
         if (scId.isEmpty()) return "Project ID is required."
         val target = resolveFile(scId, relativePath)
         if (!target.exists() || !target.isFile) {
-            return "File '${target.name}' not found in project (searched at ${target.absolutePath})."
+            return "File '${target.name}' not found (searched at: ${target.absolutePath})."
         }
 
         return try {
             val text = FileUtil.readFile(target.absolutePath)
             if (text.length > MAX_READ_CHARS) {
-                text.substring(0, MAX_READ_CHARS) + "\n\n... (truncated, file too large)"
+                text.substring(0, MAX_READ_CHARS) + "\n\n... (truncated, ${text.length} chars total)"
             } else {
                 text
             }
@@ -77,24 +167,92 @@ object AiProjectHelper {
         }
     }
 
-    fun writeFile(scId: String, relativePath: String, content: String): Result {
-        return createFile(scId, relativePath, content)
+    fun exploreProjectStructure(scId: String): String {
+        if (scId.isEmpty()) return "Project ID is required."
+
+        val root = JSONObject()
+        root.put("sc_id", scId)
+
+        // 1. Activities from ProjectFileManager
+        val activitiesArray = JSONArray()
+        val fileManager = jC.b(scId)
+        if (fileManager != null) {
+            for (bean in fileManager.b()) {
+                val act = JSONObject()
+                act.put("activity", bean.javaName)
+                act.put("layout", bean.xmlName)
+                act.put("type", bean.fileType)
+                activitiesArray.put(act)
+            }
+        }
+        root.put("activities", activitiesArray)
+
+        // 2. Custom Java & Kotlin files
+        val javaDir = getJavaDir(scId)
+        val javaList = JSONArray()
+        if (javaDir.exists()) {
+            javaDir.walkTopDown().filter { it.isFile && (it.name.endsWith(".java") || it.name.endsWith(".kt")) }.forEach {
+                javaList.put(it.absolutePath.removePrefix(javaDir.absolutePath).removePrefix("/"))
+            }
+        }
+        root.put("custom_java_kotlin_files", javaList)
+
+        // 3. Custom Native C/C++ files
+        val nativeDir = getNativeDir(scId)
+        val nativeList = JSONArray()
+        if (nativeDir.exists()) {
+            nativeDir.walkTopDown().filter { it.isFile }.forEach {
+                nativeList.put(it.absolutePath.removePrefix(nativeDir.absolutePath).removePrefix("/"))
+            }
+        }
+        root.put("native_files", nativeList)
+
+        // 4. Custom Resources
+        val resDir = getResourceDir(scId)
+        val resList = JSONArray()
+        if (resDir.exists()) {
+            resDir.walkTopDown().filter { it.isFile }.forEach {
+                resList.put(it.absolutePath.removePrefix(resDir.absolutePath).removePrefix("/"))
+            }
+        }
+        root.put("resource_files", resList)
+
+        // 5. Assets
+        val assetsDir = getAssetsDir(scId)
+        val assetsList = JSONArray()
+        if (assetsDir.exists()) {
+            assetsDir.walkTopDown().filter { it.isFile }.forEach {
+                assetsList.put(it.absolutePath.removePrefix(assetsDir.absolutePath).removePrefix("/"))
+            }
+        }
+        root.put("assets", assetsList)
+
+        // 6. Permissions
+        val permFile = File(getPermissionDir(scId), "list")
+        val permsList = JSONArray()
+        if (permFile.exists()) {
+            permFile.readLines().map { it.trim() }.filter { it.isNotEmpty() }.forEach {
+                permsList.put(it)
+            }
+        }
+        root.put("permissions", permsList)
+
+        return root.toString(2)
     }
 
     fun searchInProject(scId: String, query: String, maxResults: Int = 20): String {
         if (scId.isEmpty()) return "Project ID is required."
         if (query.isBlank()) return "Search query is empty."
 
-        val projectDir = getProjectDir(scId)
-        val dataDir = getDataDir(scId)
-        val roots = listOf(projectDir, dataDir).filter { it.exists() }
+        val dataDir = getProjectDataDir(scId)
+        val roots = listOf(dataDir).filter { it.exists() }
 
         val matches = mutableListOf<String>()
         val lower = query.lowercase(Locale.ROOT)
 
         for (root in roots) {
             root.walkTopDown()
-                .filter { it.isFile && !it.name.endsWith(".apk") && !it.name.endsWith(".zip") && !it.name.endsWith(".dex") && !it.name.endsWith(".jar") }
+                .filter { it.isFile && !it.name.endsWith(".apk") && !it.name.endsWith(".zip") && !it.name.endsWith(".dex") && !it.name.endsWith(".jar") && !it.name.startsWith(".syncthing") }
                 .forEach { file ->
                     if (matches.size >= maxResults) return@forEach
                     try {
@@ -102,7 +260,7 @@ object AiProjectHelper {
                         lines.forEachIndexed { idx, line ->
                             if (matches.size >= maxResults) return@forEachIndexed
                             if (line.lowercase(Locale.ROOT).contains(lower)) {
-                                val rel = file.absolutePath.removePrefix(root.parentFile?.absolutePath ?: "")
+                                val rel = file.absolutePath.removePrefix(root.absolutePath)
                                 matches.add("$rel:${idx + 1}: ${line.trim()}")
                             }
                         }
@@ -124,11 +282,10 @@ object AiProjectHelper {
         val xmlName = cleanName.lowercase(Locale.ROOT) + ".xml"
 
         return try {
-            // 1. Create Layout XML
-            AiLayoutHelper.applyLayoutXml(
-                scId,
-                xmlName,
-                """<?xml version="1.0" encoding="utf-8"?>
+            // 1. Create Layout XML in files/resource/layout/
+            val layoutDir = File(getResourceDir(scId), "layout")
+            layoutDir.mkdirs()
+            val layoutXml = """<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -144,7 +301,7 @@ object AiProjectHelper {
         android:textSize="20sp"
         android:textStyle="bold" />
 </LinearLayout>"""
-            )
+            FileUtil.writeFile(File(layoutDir, xmlName).absolutePath, layoutXml)
 
             // 2. Register ProjectFileBean via Sketchware data manager
             val fileBeanManager = jC.b(scId)
@@ -162,8 +319,8 @@ object AiProjectHelper {
                 jC.a(scId)?.a(fileBeanManager)
             }
 
-            // 3. Create Java skeleton
-            val javaDir = File(getProjectDir(scId), "app/src/main/java")
+            // 3. Create Java skeleton in files/java/
+            val javaDir = getJavaDir(scId)
             javaDir.mkdirs()
             val code = """package com.my.newproject;
 
@@ -186,7 +343,7 @@ public class $activityName extends AppCompatActivity {
 """
             FileUtil.writeFile(File(javaDir, "$activityName.java").absolutePath, code)
 
-            Result(true, "Activity $activityName & layout $xmlName created successfully!")
+            Result(true, "Created Activity $activityName and layout $xmlName.")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create activity $activityName", e)
             Result(false, "Failed to create activity: ${e.message}")
@@ -200,30 +357,29 @@ public class $activityName extends AppCompatActivity {
         }
 
         return try {
-            val manifestFile = File(getProjectDir(scId), "app/src/main/AndroidManifest.xml")
+            val permDir = getPermissionDir(scId)
+            permDir.mkdirs()
+            val permListFile = File(permDir, "list")
+            val current = if (permListFile.exists()) FileUtil.readFile(permListFile.absolutePath) else ""
+            if (!current.contains(cleanPerm)) {
+                FileUtil.writeFile(permListFile.absolutePath, "$current\n$cleanPerm".trim())
+            }
+
+            // Also check mysc AndroidManifest if present
+            val manifestFile = File(wq.d(scId), "app/src/main/AndroidManifest.xml")
             if (manifestFile.exists()) {
                 val content = FileUtil.readFile(manifestFile.absolutePath)
-                if (content.contains(cleanPerm)) {
-                    return Result(true, "Permission $cleanPerm is already present.")
+                if (!content.contains(cleanPerm)) {
+                    val permTag = "    <uses-permission android:name=\"$cleanPerm\" />\n"
+                    val updated = if (content.contains("<manifest")) {
+                        content.replaceFirst(Regex("(<manifest[^>]*>)"), "$1\n$permTag")
+                    } else {
+                        permTag + content
+                    }
+                    FileUtil.writeFile(manifestFile.absolutePath, updated)
                 }
-                val permTag = "    <uses-permission android:name=\"$cleanPerm\" />\n"
-                val updated = if (content.contains("<manifest")) {
-                    content.replaceFirst(Regex("(<manifest[^>]*>)"), "$1\n$permTag")
-                } else {
-                    permTag + content
-                }
-                FileUtil.writeFile(manifestFile.absolutePath, updated)
-                Result(true, "Permission $cleanPerm added to AndroidManifest.xml successfully.")
-            } else {
-                val permDir = File(getDataDir(scId), "permission")
-                permDir.mkdirs()
-                val permListFile = File(permDir, "list")
-                val current = if (permListFile.exists()) FileUtil.readFile(permListFile.absolutePath) else ""
-                if (!current.contains(cleanPerm)) {
-                    FileUtil.writeFile(permListFile.absolutePath, "$current\n$cleanPerm".trim())
-                }
-                Result(true, "Permission $cleanPerm added to project permissions.")
             }
+            Result(true, "Permission $cleanPerm added.")
         } catch (e: Exception) {
             Result(false, "Failed to add permission: ${e.message}")
         }
@@ -250,7 +406,7 @@ public class $activityName extends AppCompatActivity {
             }
             val bean = ComponentBean(typeInt, id)
             projectData.a(javaName, bean)
-            Result(true, "Component $typeName ($id) added to $javaName.")
+            Result(true, "Added component $typeName ($id) to $javaName.")
         } catch (e: Exception) {
             Result(false, "Failed to add component: ${e.message}")
         }
@@ -270,7 +426,7 @@ public class $activityName extends AppCompatActivity {
             val vars = projectData.k(javaName)
             if (vars != null) {
                 vars.add(Pair(typeInt, varName))
-                Result(true, "Variable $varType $varName added to $javaName.")
+                Result(true, "Added variable $varType $varName to $javaName.")
             } else {
                 Result(false, "Variable list not available for $javaName.")
             }

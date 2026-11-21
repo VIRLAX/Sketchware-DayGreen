@@ -165,6 +165,7 @@ class AiChatFragment : Fragment() {
 
         binding.btnApply.setOnClickListener { confirmApply() }
         binding.btnLink.setOnClickListener { showAttachmentOptions() }
+        binding.btnExplorer.setOnClickListener { showProjectExplorer() }
         binding.btnSettings.setOnClickListener { openSettings() }
         binding.btnModel.setOnClickListener {
             AiModelPicker.show(requireContext(), store, store.providerIndex) {
@@ -555,6 +556,7 @@ class AiChatFragment : Fragment() {
                 mainHandler.post {
                     if (_binding == null) return@post
                     setBusy(false)
+                    adapter.finishActiveTask()
                     adapter.removeStatus()
                     adapter.add(ChatAdapter.ChatMessage.agent(reply))
 
@@ -600,6 +602,7 @@ class AiChatFragment : Fragment() {
                 mainHandler.post {
                     if (_binding == null) return@post
                     setBusy(false)
+                    adapter.finishActiveTask()
                     adapter.removeStatus()
                     adapter.add(ChatAdapter.ChatMessage.agent("Error: $error"))
                     scrollToBottom()
@@ -619,6 +622,14 @@ class AiChatFragment : Fragment() {
                     if (_binding == null) return@post
                     adapter.removeStatus()
                     adapter.add(ChatAdapter.ChatMessage.thinking(thinking))
+                    scrollToBottom()
+                }
+            }
+
+            override fun onTaskStep(stepTitle: String, isFinished: Boolean, detail: String?) {
+                mainHandler.post {
+                    if (_binding == null) return@post
+                    adapter.updateTaskStep(stepTitle, isFinished, detail)
                     scrollToBottom()
                 }
             }
@@ -794,5 +805,116 @@ class AiChatFragment : Fragment() {
     private fun getXmlName(): String {
         val file = findProjectFile(getScId(), getJavaName())
         return file?.xmlName ?: "main.xml"
+    }
+
+    private fun showProjectExplorer() {
+        val scId = getScId()
+        if (scId.isEmpty()) {
+            SketchwareUtil.toast("Project ID tidak ditemukan.")
+            return
+        }
+
+        val dialog = BottomSheetDialog(requireContext())
+        val view = layoutInflater.inflate(R.layout.dialog_project_explorer, null)
+        dialog.setContentView(view)
+
+        val container = view.findViewById<LinearLayout>(R.id.ll_explorer_items)
+        val btnRefresh = view.findViewById<View>(R.id.btn_refresh_explorer)
+
+        val populate = {
+            container?.removeAllViews()
+            Thread {
+                val raw = AiProjectHelper.exploreProjectStructure(scId)
+                mainHandler.post {
+                    if (_binding == null || container == null) return@post
+                    try {
+                        val json = org.json.JSONObject(raw)
+                        val addSection = { title: String, items: org.json.JSONArray?, iconRes: Int ->
+                            if (items != null && items.length() > 0) {
+                                val header = TextView(requireContext()).apply {
+                                    text = "$title (${items.length()})"
+                                    textSize = 12f
+                                    setTypeface(null, Typeface.BOLD)
+                                    setPadding(4, 16, 4, 6)
+                                }
+                                container.addView(header)
+
+                                for (i in 0 until items.length()) {
+                                    val row = LinearLayout(requireContext()).apply {
+                                        orientation = LinearLayout.HORIZONTAL
+                                        gravity = Gravity.CENTER_VERTICAL
+                                        setPadding(10, 10, 10, 10)
+                                        isClickable = true
+                                        isFocusable = true
+                                        setBackgroundResource(R.drawable.bg_editor_tab_chip)
+                                        val lp = LinearLayout.LayoutParams(
+                                            LinearLayout.LayoutParams.MATCH_PARENT,
+                                            LinearLayout.LayoutParams.WRAP_CONTENT
+                                        ).apply {
+                                            bottomMargin = 6
+                                        }
+                                        layoutParams = lp
+                                    }
+
+                                    val icon = ImageView(requireContext()).apply {
+                                        setImageResource(iconRes)
+                                        layoutParams = LinearLayout.LayoutParams(40, 40).apply {
+                                            marginEnd = 16
+                                        }
+                                    }
+                                    row.addView(icon)
+
+                                    val itemObj = items.optJSONObject(i)
+                                    val itemStr = items.optString(i)
+                                    val label = if (itemObj != null) {
+                                        "${itemObj.optString("activity")} (${itemObj.optString("layout")})"
+                                    } else {
+                                        itemStr
+                                    }
+
+                                    val tv = TextView(requireContext()).apply {
+                                        text = label
+                                        textSize = 12f
+                                        setSingleLine(true)
+                                    }
+                                    row.addView(tv)
+
+                                    row.setOnClickListener {
+                                        val filePath = if (itemObj != null) itemObj.optString("activity") else itemStr
+                                        val content = AiProjectHelper.readFile(scId, filePath)
+                                        MaterialAlertDialogBuilder(requireContext())
+                                            .setTitle(label)
+                                            .setMessage(if (content.length > 2000) content.substring(0, 2000) + "\n... (truncated)" else content)
+                                            .setPositiveButton("Masukkan ke Chat") { _, _ ->
+                                                binding.etInput.append(" @$filePath ")
+                                                dialog.dismiss()
+                                            }
+                                            .setNegativeButton("Tutup", null)
+                                            .show()
+                                    }
+                                    container.addView(row)
+                                }
+                            }
+                        }
+
+                        addSection("Activities", json.optJSONArray("activities"), R.drawable.ic_mtrl_android)
+                        addSection("Custom Java / Kotlin", json.optJSONArray("custom_java_kotlin_files"), R.drawable.ic_mtrl_folder_code)
+                        addSection("Native C/C++", json.optJSONArray("native_files"), R.drawable.ic_mtrl_folder)
+                        addSection("Resources", json.optJSONArray("resource_files"), R.drawable.ic_mtrl_folder)
+                        addSection("Assets", json.optJSONArray("assets"), R.drawable.ic_mtrl_folder)
+                        addSection("Permissions", json.optJSONArray("permissions"), R.drawable.ic_mtrl_shield_check)
+                    } catch (e: Exception) {
+                        val tv = TextView(requireContext()).apply {
+                            text = "Error memuat struktur: ${e.message}"
+                        }
+                        container.addView(tv)
+                    }
+                }
+            }.start()
+        }
+
+        btnRefresh?.setOnClickListener { populate() }
+        populate()
+        dialog.show()
     }
 }

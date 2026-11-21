@@ -27,20 +27,30 @@ class ChatAdapter(
         private const val TYPE_AGENT = 1
         private const val TYPE_STATUS = 2
         private const val TYPE_THINKING = 3
+        private const val TYPE_TASK = 4
 
         private val FENCE = Pattern.compile("```([A-Za-z0-9_+#.\\-:\\s]*?)\\n([\\s\\S]*?)```")
     }
 
+    data class TaskStep(
+        val title: String,
+        var isFinished: Boolean = false,
+        var detail: String? = null
+    )
+
     class ChatMessage private constructor(
         val type: Int,
-        val text: String,
-        var expanded: Boolean = false
+        var text: String,
+        var expanded: Boolean = false,
+        val steps: MutableList<TaskStep> = mutableListOf(),
+        var isTaskFinished: Boolean = false
     ) {
         companion object {
             fun user(text: String) = ChatMessage(TYPE_USER, text)
             fun agent(text: String) = ChatMessage(TYPE_AGENT, text)
             fun status(text: String) = ChatMessage(TYPE_STATUS, text)
             fun thinking(text: String) = ChatMessage(TYPE_THINKING, text)
+            fun task(title: String) = ChatMessage(TYPE_TASK, title, expanded = false)
         }
     }
 
@@ -65,6 +75,50 @@ class ChatAdapter(
         }
     }
 
+    fun updateTaskStep(stepTitle: String, isFinished: Boolean, detail: String?) {
+        // Find existing task message or create a new one
+        var taskMsg: ChatMessage? = null
+        var taskIndex = -1
+        for (i in items.indices.reversed()) {
+            if (items[i].type == TYPE_TASK && !items[i].isTaskFinished) {
+                taskMsg = items[i]
+                taskIndex = i
+                break
+            }
+        }
+
+        if (taskMsg == null) {
+            removeStatus()
+            taskMsg = ChatMessage.task("Executing Task...")
+            items.add(taskMsg)
+            taskIndex = items.size - 1
+            notifyItemInserted(taskIndex)
+        }
+
+        // Check if step exists or append new
+        val existing = taskMsg.steps.find { it.title == stepTitle }
+        if (existing != null) {
+            existing.isFinished = isFinished
+            if (detail != null) existing.detail = detail
+        } else {
+            taskMsg.steps.add(TaskStep(stepTitle, isFinished, detail))
+        }
+
+        notifyItemChanged(taskIndex)
+    }
+
+    fun finishActiveTask() {
+        for (i in items.indices.reversed()) {
+            if (items[i].type == TYPE_TASK && !items[i].isTaskFinished) {
+                items[i].isTaskFinished = true
+                items[i].text = "Completed Task"
+                items[i].expanded = false // Auto-collapse into compact markdown pill
+                notifyItemChanged(i)
+                break
+            }
+        }
+    }
+
     override fun getItemViewType(position: Int): Int = items[position].type
 
     override fun getItemCount(): Int = items.size
@@ -74,6 +128,7 @@ class ChatAdapter(
             TYPE_USER -> R.layout.item_chat_user
             TYPE_STATUS -> R.layout.item_chat_status
             TYPE_THINKING -> R.layout.item_chat_thinking
+            TYPE_TASK -> R.layout.item_chat_task
             else -> R.layout.item_chat_agent
         }
         val view = LayoutInflater.from(parent.context).inflate(layout, parent, false)
@@ -87,6 +142,7 @@ class ChatAdapter(
             TYPE_AGENT -> bindAgent(holder, item)
             TYPE_STATUS -> holder.text?.text = item.text
             TYPE_THINKING -> bindThinking(holder, item)
+            TYPE_TASK -> bindTask(holder, item)
         }
     }
 
@@ -162,6 +218,65 @@ class ChatAdapter(
         }
     }
 
+    private fun bindTask(holder: Holder, item: ChatMessage) {
+        val count = item.steps.size
+        val badgeText = if (count == 1) "1 step" else "$count steps"
+        holder.taskBadge?.text = badgeText
+
+        if (item.isTaskFinished) {
+            holder.taskProgress?.visibility = View.GONE
+            holder.taskDoneIcon?.visibility = View.VISIBLE
+            holder.taskTitle?.text = if (item.expanded) "Completed Task ($badgeText)" else "Task Completed ($badgeText)"
+        } else {
+            holder.taskProgress?.visibility = View.VISIBLE
+            holder.taskDoneIcon?.visibility = View.GONE
+            holder.taskTitle?.text = item.text
+        }
+
+        holder.taskChevron?.rotation = if (item.expanded) 180f else 0f
+        holder.taskBody?.visibility = if (item.expanded) View.VISIBLE else View.GONE
+
+        // Populate steps in container
+        val stepsContainer = holder.taskSteps
+        if (stepsContainer != null) {
+            stepsContainer.removeAllViews()
+            val inflater = LayoutInflater.from(stepsContainer.context)
+            for (step in item.steps) {
+                val stepView = inflater.inflate(R.layout.item_chat_task_step, stepsContainer, false)
+                val ivIcon = stepView.findViewById<ImageView>(R.id.iv_step_icon)
+                val tvTitle = stepView.findViewById<TextView>(R.id.tv_step_title)
+                val tvDetail = stepView.findViewById<TextView>(R.id.tv_step_detail)
+
+                tvTitle.text = step.title
+                if (step.isFinished) {
+                    ivIcon.setImageResource(R.drawable.ic_mtrl_done)
+                    ivIcon.alpha = 1.0f
+                } else {
+                    ivIcon.setImageResource(R.drawable.check_indeterminate_small_24px)
+                    ivIcon.alpha = 0.6f
+                }
+
+                if (!step.detail.isNullOrEmpty()) {
+                    tvDetail.text = step.detail
+                    tvDetail.visibility = View.VISIBLE
+                } else {
+                    tvDetail.visibility = View.GONE
+                }
+
+                stepsContainer.addView(stepView)
+            }
+        }
+
+        val toggle = View.OnClickListener {
+            val pos = holder.adapterPosition
+            if (pos == RecyclerView.NO_POSITION) return@OnClickListener
+            item.expanded = !item.expanded
+            notifyItemChanged(pos)
+        }
+
+        holder.taskHeader?.setOnClickListener(toggle)
+    }
+
     class Segment private constructor(
         val isCode: Boolean,
         val lang: String,
@@ -180,6 +295,16 @@ class ChatAdapter(
         val chevron: ImageView? = itemView.findViewById(R.id.iv_thinking_chevron)
         val title: TextView? = itemView.findViewById(R.id.tv_thinking_title)
         val body: TextView? = itemView.findViewById(R.id.tv_thinking_body)
+
+        // Task Holder views
+        val taskHeader: View? = itemView.findViewById(R.id.ll_task_header)
+        val taskTitle: TextView? = itemView.findViewById(R.id.tv_task_title)
+        val taskBadge: TextView? = itemView.findViewById(R.id.tv_task_badge)
+        val taskProgress: View? = itemView.findViewById(R.id.pi_task_progress)
+        val taskDoneIcon: View? = itemView.findViewById(R.id.iv_task_done)
+        val taskChevron: ImageView? = itemView.findViewById(R.id.iv_task_chevron)
+        val taskBody: View? = itemView.findViewById(R.id.ll_task_body)
+        val taskSteps: LinearLayout? = itemView.findViewById(R.id.ll_task_steps)
 
         init {
             text?.movementMethod = LinkMovementMethod.getInstance()
