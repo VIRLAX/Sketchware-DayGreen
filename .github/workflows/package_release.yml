@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: telegram-userbot
+  group: release-build
   cancel-in-progress: false
 
 jobs:
@@ -105,6 +105,24 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         run: ./gradlew assembleRelease --build-cache --stacktrace
 
+      - name: Upload android26 release APK
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-android26-release
+          path: app/build/outputs/apk/android26/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload android33 release APK
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-android33-release
+          path: app/build/outputs/apk/android33/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -114,29 +132,3 @@ jobs:
           files: |
             app/build/outputs/apk/android26/release/*.apk
             app/build/outputs/apk/android33/release/*.apk
-
-      - name: Set up Python
-        if: steps.check_tag.outputs.exists == 'false'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install Pyrogram & Dependencies
-        if: steps.check_tag.outputs.exists == 'false'
-        run: pip install pyrofork tgcrypto
-
-      - name: Send APKs to Telegram (Userbot)
-        if: steps.check_tag.outputs.exists == 'false'
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          SESSION_STRING: ${{ secrets.SESSION_STRING }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.version }}
-          APP_NAME: Sketchware DayGreen
-          APP_PACKAGE: ${{ steps.version.outputs.package }}
-          REPO: ${{ github.repository }}
-          NOTES_FILE: notes.md
-        run: python send_telegram.py

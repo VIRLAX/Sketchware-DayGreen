@@ -5,3 +5,11 @@
 /hs_err_pid*.log
 /java_pid*.hprof
 /.artifacts
+
+# Syncthing
+.syncthing*
+*.syncthing.*
+*.tmp
+
+# Local configurations
+local.properties
