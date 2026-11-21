@@ -418,7 +418,7 @@ class AiChatClient(
                 if (!AiBlockWriter.isValidEventKey(scId, javaName, eventKey)) return "Event '$eventKey' is invalid."
 
                 if (store.permission == 3) {
-                    AiBlockWriter.writeSourceDirectly(scId, javaName, eventKey, code).message
+                    AiBlockWriter.writeSourceCode(scId, javaName, eventKey, code).message
                 } else {
                     proposals.add(Proposal.source(javaName, eventKey, code))
                     "Pending user approval to insert source code."

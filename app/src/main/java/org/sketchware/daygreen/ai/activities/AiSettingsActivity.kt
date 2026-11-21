@@ -300,8 +300,8 @@ class AiSettingsActivity : BaseAppCompatActivity() {
         onSave: (String) -> Unit
     ) {
         val inputBinding = DialogAiInputBinding.inflate(layoutInflater)
-        val layout = inputBinding.til
-        val edit = inputBinding.et
+        val layout = inputBinding.tilInput
+        val edit = inputBinding.etInput
 
         layout.hint = hint
         edit.setText(initialValue)

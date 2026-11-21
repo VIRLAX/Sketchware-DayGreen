@@ -153,7 +153,7 @@ object AiProjectHelper {
                     ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY,
                     cleanName.lowercase(Locale.ROOT),
                     ProjectFileBean.ORIENTATION_PORTRAIT,
-                    ProjectFileBean.THEME_NO_ACTIONBAR,
+                    ProjectFileBean.THEME_NOACTIONBAR,
                     ProjectFileBean.KEYBOARD_STATE_UNSPECIFIED
                 )
                 fileBeanManager.a(bean)

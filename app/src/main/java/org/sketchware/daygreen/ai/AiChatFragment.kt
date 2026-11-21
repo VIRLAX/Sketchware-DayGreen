@@ -770,8 +770,6 @@ class AiChatFragment : Fragment() {
             }
         }.start()
     }
-        }.start()
-    }
 
     private fun setBusy(busy: Boolean) {
         isBusy = busy
