@@ -11,6 +11,10 @@ object AiConnectionTester {
         fun onResult(success: Boolean, message: String)
     }
 
+    interface MultiKeyCallback {
+        fun onResult(validKeys: List<String>, invalidKeys: List<String>, rateLimitedKeys: List<String>, message: String)
+    }
+
     private val CLIENT = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -28,9 +32,11 @@ object AiConnectionTester {
                 CLIENT.newCall(request).execute().use { response ->
                     val code = response.code
                     if (code == 200) {
-                        callback.onResult(true, "Terhubung")
+                        callback.onResult(true, "Terhubung (HTTP 200 OK)")
                     } else if (code == 401 || code == 403) {
                         callback.onResult(false, "API key tidak valid (HTTP $code)")
+                    } else if (code == 429) {
+                        callback.onResult(false, "Kuota habis / Rate limit (HTTP 429)")
                     } else {
                         callback.onResult(false, "Gagal (HTTP $code)")
                     }
@@ -41,7 +47,57 @@ object AiConnectionTester {
         }.start()
     }
 
-    private fun buildRequest(providerIndex: Int, apiKey: String): Request? {
+    @JvmStatic
+    fun testMultiKeys(providerIndex: Int, rawInput: String, callback: MultiKeyCallback) {
+        Thread {
+            val candidateKeys = rawInput.split(Regex("[\\n,;]+"))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+
+            if (candidateKeys.isEmpty()) {
+                callback.onResult(emptyList(), emptyList(), emptyList(), "Masukkan API key terlebih dahulu.")
+                return@Thread
+            }
+
+            val validKeys = mutableListOf<String>()
+            val invalidKeys = mutableListOf<String>()
+            val rateLimitedKeys = mutableListOf<String>()
+
+            for (key in candidateKeys) {
+                val req = buildRequest(providerIndex, key)
+                if (req == null) {
+                    invalidKeys.add(key)
+                    continue
+                }
+                try {
+                    CLIENT.newCall(req).execute().use { res ->
+                        when (res.code) {
+                            200 -> validKeys.add(key)
+                            429 -> rateLimitedKeys.add(key)
+                            else -> invalidKeys.add(key)
+                        }
+                    }
+                } catch (_: Exception) {
+                    invalidKeys.add(key)
+                }
+            }
+
+            val msg = if (validKeys.isNotEmpty()) {
+                val rText = if (rateLimitedKeys.isNotEmpty()) " · ${rateLimitedKeys.size} limit (429)" else ""
+                val iText = if (invalidKeys.isNotEmpty()) " · ${invalidKeys.size} invalid" else ""
+                "${validKeys.size} Key Aktif (HTTP 200 OK)$rText$iText"
+            } else if (rateLimitedKeys.isNotEmpty()) {
+                "Semua key (${rateLimitedKeys.size}) terkena rate limit (HTTP 429)"
+            } else {
+                "Semua API key tidak valid / gagal (HTTP != 200)"
+            }
+
+            callback.onResult(validKeys, invalidKeys, rateLimitedKeys, msg)
+        }.start()
+    }
+
+    fun buildRequest(providerIndex: Int, apiKey: String): Request? {
         return when (providerIndex) {
             0 -> Request.Builder()
                 .url("https://api.openai.com/v1/models")

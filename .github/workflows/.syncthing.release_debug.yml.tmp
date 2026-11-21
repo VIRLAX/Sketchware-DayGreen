@@ -1,0 +1,80 @@
+name: Android Debug Build
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-userbot
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Cache dependency Gradle (~/.gradle/caches, wrapper) otomatis disimpan di branch main
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Python & Pyrogram dipindah ke atas, karena dibutuhkan live_log.py saat build
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Pyrogram & Dependencies
+        run: pip install pyrofork tgcrypto
+
+      - name: Build debug APKs (live log ke Telegram)
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          SESSION_STRING: ${{ secrets.SESSION_STRING }}
+          TELEGRAM_CHAT_ID: -5564750441
+          LOG_THREAD_ID: ""
+          LOG_TITLE: "Debug #${{ github.run_number }}"
+        run: python live_log.py ./gradlew assembleDebug --build-cache --stacktrace
+
+      - name: Upload android26 debug APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: app-android26-debug
+          path: app/build/outputs/apk/android26/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload android33 debug APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: app-android33-debug
+          path: app/build/outputs/apk/android33/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Send APK to Telegram (Userbot)
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          SESSION_STRING: ${{ secrets.SESSION_STRING }}
+          TELEGRAM_CHAT_ID: -5564750441
+          TELEGRAM_THREAD_ID2: ""
+          VERSION: ${{ github.run_number }}
+          COMMIT_AUTHOR: ${{ github.actor }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: python send_telegram_debug.py

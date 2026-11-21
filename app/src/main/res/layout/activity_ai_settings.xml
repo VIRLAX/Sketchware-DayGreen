@@ -21,7 +21,7 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/collapsingToolbarLayoutLargeSize"
             android:fitsSystemWindows="true"
-            app:title="AI"
+            app:title="AI Assistant"
             app:layout_scrollFlags="scroll|exitUntilCollapsed"
             app:collapsedTitleTextAppearance="@style/TextAppearance.Material3.TitleMedium"
             app:expandedTitleTextAppearance="@style/TextAppearance.Material3.DisplaySmall">
@@ -47,63 +47,18 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingTop="8dp"
-            android:paddingBottom="24dp">
+            android:paddingBottom="32dp">
 
+            <!-- 1. PROVIDER & MODEL SECTION -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
                 android:layout_marginTop="8dp"
-                android:text="Provider"
+                android:text="Provider &amp; Model"
                 android:textColor="?attr/colorPrimary"
-                android:textSize="14sp" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp"
-                android:layout_marginTop="8dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="0dp">
-
-                <LinearLayout
-                    android:id="@+id/row_provider"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="?attr/selectableItemBackground"
-                    android:orientation="vertical"
-                    android:paddingStart="20dp"
-                    android:paddingTop="16dp"
-                    android:paddingEnd="20dp"
-                    android:paddingBottom="16dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Provider"
-                        android:textColor="?attr/colorOnSurface"
-                        android:textSize="16sp" />
-
-                    <TextView
-                        android:id="@+id/tv_provider_value"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:textColor="?attr/colorOnSurfaceVariant"
-                        android:textSize="13sp" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="24dp"
-                android:layout_marginTop="16dp"
-                android:text="Connection"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="14sp" />
+                android:textSize="14sp"
+                android:textStyle="bold" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -120,31 +75,41 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
+                    <!-- Provider Row -->
                     <LinearLayout
-                        android:id="@+id/row_api_key"
+                        android:id="@+id/row_provider"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="?attr/selectableItemBackground"
                         android:orientation="vertical"
                         android:paddingStart="20dp"
-                        android:paddingTop="16dp"
+                        android:paddingTop="14dp"
                         android:paddingEnd="20dp"
-                        android:paddingBottom="16dp">
+                        android:paddingBottom="14dp">
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="API key"
+                            android:text="Provider AI"
                             android:textColor="?attr/colorOnSurface"
-                            android:textSize="16sp" />
+                            android:textSize="16sp"
+                            android:fontFamily="sans-serif-medium" />
 
                         <TextView
-                            android:id="@+id/tv_api_key_value"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:text="Pilih platform model kecerdasan buatan"
                             android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="13sp" />
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/tv_provider_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="?attr/colorPrimary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
                     </LinearLayout>
 
                     <View
@@ -154,6 +119,7 @@
                         android:layout_marginEnd="20dp"
                         android:background="?attr/colorOutlineVariant" />
 
+                    <!-- Model Row (200 OK only) -->
                     <LinearLayout
                         android:id="@+id/row_model"
                         android:layout_width="match_parent"
@@ -161,69 +127,47 @@
                         android:background="?attr/selectableItemBackground"
                         android:orientation="vertical"
                         android:paddingStart="20dp"
-                        android:paddingTop="16dp"
+                        android:paddingTop="14dp"
                         android:paddingEnd="20dp"
-                        android:paddingBottom="16dp">
+                        android:paddingBottom="14dp">
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Model"
+                            android:text="Model Terverifikasi (200 OK)"
                             android:textColor="?attr/colorOnSurface"
-                            android:textSize="16sp" />
+                            android:textSize="16sp"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Hanya menampilkan model yang aktif &amp; lolos uji server"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp" />
 
                         <TextView
                             android:id="@+id/tv_model_value"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="13sp" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="20dp"
-                        android:layout_marginEnd="20dp"
-                        android:background="?attr/colorOutlineVariant" />
-
-                    <LinearLayout
-                        android:id="@+id/row_test"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:orientation="vertical"
-                        android:paddingStart="20dp"
-                        android:paddingTop="16dp"
-                        android:paddingEnd="20dp"
-                        android:paddingBottom="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Test connection"
-                            android:textColor="?attr/colorOnSurface"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/tv_test_status"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:textSize="13sp" />
+                            android:layout_marginTop="4dp"
+                            android:textColor="?attr/colorPrimary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- 2. CONNECTION & REALTIME VALIDATION SECTION -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
                 android:layout_marginTop="16dp"
-                android:text="Behavior"
+                android:text="Koneksi &amp; Validasi API"
                 android:textColor="?attr/colorPrimary"
-                android:textSize="14sp" />
+                android:textSize="14sp"
+                android:textStyle="bold" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -236,43 +180,111 @@
                 app:strokeWidth="0dp">
 
                 <LinearLayout
-                    android:id="@+id/row_system_prompt"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="?attr/selectableItemBackground"
-                    android:orientation="vertical"
-                    android:paddingStart="20dp"
-                    android:paddingTop="16dp"
-                    android:paddingEnd="20dp"
-                    android:paddingBottom="16dp">
+                    android:orientation="vertical">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="System prompt"
-                        android:textColor="?attr/colorOnSurface"
-                        android:textSize="16sp" />
-
-                    <TextView
-                        android:id="@+id/tv_system_prompt_value"
+                    <!-- API Key Row -->
+                    <LinearLayout
+                        android:id="@+id/row_api_key"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:ellipsize="end"
-                        android:maxLines="2"
-                        android:textColor="?attr/colorOnSurfaceVariant"
-                        android:textSize="13sp" />
+                        android:background="?attr/selectableItemBackground"
+                        android:orientation="vertical"
+                        android:paddingStart="20dp"
+                        android:paddingTop="14dp"
+                        android:paddingEnd="20dp"
+                        android:paddingBottom="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="API Key (Multi-Key)"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="16sp"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Mendukung 1 atau banyak key (pisahkan baris baru) untuk rotasi"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/tv_api_key_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="20dp"
+                        android:layout_marginEnd="20dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <!-- Realtime Validation Button Row -->
+                    <LinearLayout
+                        android:id="@+id/row_test"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="20dp"
+                        android:paddingTop="14dp"
+                        android:paddingEnd="20dp"
+                        android:paddingBottom="14dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Validasi Real-Time (HTTP 200)"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:id="@+id/tv_test_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Uji koneksi &amp; filter model 200 OK"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_validate"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Uji 200 OK"
+                            android:textSize="12sp"
+                            app:cornerRadius="16dp" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- 3. SMART FEATURES SECTION (Round-Robin & Token Saver) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
                 android:layout_marginTop="16dp"
-                android:text="Tool permissions"
+                android:text="Fitur Cerdas Otomatis"
                 android:textColor="?attr/colorPrimary"
-                android:textSize="14sp" />
+                android:textSize="14sp"
+                android:textStyle="bold" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -284,23 +296,49 @@
                 app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
-                <RadioGroup
-                    android:id="@+id/radio_permission"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingStart="12dp"
-                    android:paddingTop="8dp"
-                    android:paddingEnd="12dp"
-                    android:paddingBottom="8dp">
+                    android:orientation="vertical">
 
-                    <com.google.android.material.radiobutton.MaterialRadioButton
-                        android:id="@+id/rb_ask"
+                    <!-- Round Robin Switch -->
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:padding="12dp"
-                        android:text="Ask before every tool"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="20dp"
+                        android:paddingTop="14dp"
+                        android:paddingEnd="20dp"
+                        android:paddingBottom="14dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Smart Round-Robin &amp; Auto-Failover"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Rotasi beban antar key &amp; bypass otomatis jika limit 429"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/sw_round_robin"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
 
                     <View
                         android:layout_width="match_parent"
@@ -309,52 +347,244 @@
                         android:layout_marginEnd="20dp"
                         android:background="?attr/colorOutlineVariant" />
 
-                    <com.google.android.material.radiobutton.MaterialRadioButton
-                        android:id="@+id/rb_auto_edit"
+                    <!-- Token Saver Switch -->
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:padding="12dp"
-                        android:text="Auto-approve file edits"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="20dp"
+                        android:paddingTop="14dp"
+                        android:paddingEnd="20dp"
+                        android:paddingBottom="14dp">
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="20dp"
-                        android:layout_marginEnd="20dp"
-                        android:background="?attr/colorOutlineVariant" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-                    <com.google.android.material.radiobutton.MaterialRadioButton
-                        android:id="@+id/rb_plan"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:padding="12dp"
-                        android:text="Plan only"
-                        android:textColor="?attr/colorOnSurface" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Hemat Token Otomatis"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:fontFamily="sans-serif-medium" />
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="20dp"
-                        android:layout_marginEnd="20dp"
-                        android:background="?attr/colorOutlineVariant" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Kompresi riwayat &amp; pemotongan konteks cerdas di latar belakang"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="12sp" />
+                        </LinearLayout>
 
-                    <com.google.android.material.radiobutton.MaterialRadioButton
-                        android:id="@+id/rb_autonomous"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:padding="12dp"
-                        android:text="Autonomous"
-                        android:textColor="?attr/colorOnSurface" />
-                </RadioGroup>
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/sw_token_saver"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+                </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <LinearLayout
-                android:id="@+id/tools_container"
+            <!-- 4. MASTER AGENT TOOLS SECTION (1 MASTER SWITCH) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:layout_marginTop="16dp"
+                android:text="Kemampuan AI Agent"
+                android:textColor="?attr/colorPrimary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginTop="8dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="20dp"
+                    android:paddingTop="16dp"
+                    android:paddingEnd="20dp"
+                    android:paddingBottom="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Semua Tools Agen Aktif"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="16sp"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Bikin file, baca/tulis kode, pasang blok logika, kelola layout, &amp; perbaiki bug"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/sw_agent_tools"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 5. PERMISSIONS & BEHAVIOR SECTION -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
                 android:layout_marginTop="16dp"
-                android:orientation="vertical" />
+                android:text="Izin Modifikasi &amp; Perilaku"
+                android:textColor="?attr/colorPrimary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginTop="8dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <RadioGroup
+                        android:id="@+id/radio_permission"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingStart="12dp"
+                        android:paddingTop="8dp"
+                        android:paddingEnd="12dp"
+                        android:paddingBottom="8dp">
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/rb_ask"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:padding="10dp"
+                            android:text="Minta konfirmasi sebelum mengubah kode (Aman)"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/rb_auto_edit"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:padding="10dp"
+                            android:text="Terapkan modifikasi file otomatis"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/rb_plan"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:padding="10dp"
+                            android:text="Rencana saja (Hanya beri saran kode di chat)"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/rb_autonomous"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:padding="10dp"
+                            android:text="Otonom penuh (Autonomous Mode)"
+                            android:textColor="?attr/colorOnSurface" />
+                    </RadioGroup>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="20dp"
+                        android:layout_marginEnd="20dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <!-- System Prompt Row -->
+                    <LinearLayout
+                        android:id="@+id/row_system_prompt"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:orientation="vertical"
+                        android:paddingStart="20dp"
+                        android:paddingTop="14dp"
+                        android:paddingEnd="20dp"
+                        android:paddingBottom="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="System Prompt"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="15sp"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Instruksi kepribadian &amp; aturan kerja AI"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/tv_system_prompt_value"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:ellipsize="end"
+                            android:maxLines="2"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

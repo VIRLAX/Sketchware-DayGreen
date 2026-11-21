@@ -12,29 +12,36 @@ object AiModelPicker {
     @JvmStatic
     fun show(context: Context, store: AiSettingsStore, providerIndex: Int, onPicked: Runnable?) {
         val provider = AiProviders.ALL[providerIndex]
-        val main = Handler(Looper.getMainLooper())
+        val cached = store.getVerifiedModels(providerIndex)
 
+        if (cached.isNotEmpty()) {
+            showList(context, store, cached, provider.models, onPicked, null, providerIndex)
+            return
+        }
+
+        val main = Handler(Looper.getMainLooper())
         val bar = ProgressBar(context)
         val pad = dp(context, 24)
         bar.setPadding(pad, pad, pad, pad)
 
         val loading = MaterialAlertDialogBuilder(context)
-            .setTitle("Memuat model...")
+            .setTitle("Memuat model terverifikasi...")
             .setView(bar)
+            .setCancelable(false)
             .show()
 
-        AiModelFetcher.fetch(provider, store.getApiKey(providerIndex), object : AiModelFetcher.Callback {
+        AiModelFetcher.fetchWithStore(provider, store, providerIndex, object : AiModelFetcher.Callback {
             override fun onResult(models: List<String>) {
                 main.post {
                     loading.dismiss()
-                    showList(context, store, models, provider.models, onPicked, null)
+                    showList(context, store, models, provider.models, onPicked, null, providerIndex)
                 }
             }
 
             override fun onError(error: String) {
                 main.post {
                     loading.dismiss()
-                    showList(context, store, emptyList(), provider.models, onPicked, error)
+                    showList(context, store, emptyList(), provider.models, onPicked, error, providerIndex)
                 }
             }
         })
@@ -46,11 +53,12 @@ object AiModelPicker {
         fetched: List<String>,
         defaults: Array<out String>,
         onPicked: Runnable?,
-        warning: String?
+        warning: String?,
+        providerIndex: Int
     ) {
-        val models = if (fetched.isEmpty()) defaults.toList() else fetched
+        val models = if (fetched.isNotEmpty()) fetched else defaults.toList()
         if (warning != null) {
-            Toast.makeText(context, "Menggunakan daftar bawaan: $warning", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Daftar model: $warning", Toast.LENGTH_SHORT).show()
         }
 
         var current = store.getModelId("")
@@ -62,11 +70,18 @@ object AiModelPicker {
         val selected = intArrayOf(checked)
 
         MaterialAlertDialogBuilder(context)
-            .setTitle("Pilih Model")
+            .setTitle("Pilih Model (200 OK)")
             .setSingleChoiceItems(items, checked) { _, which -> selected[0] = which }
-            .setPositiveButton("OK") { _, _ ->
-                store.setModelId(items[selected[0]])
-                onPicked?.run()
+            .setPositiveButton("Pilih") { _, _ ->
+                if (selected[0] in items.indices) {
+                    store.setModelId(items[selected[0]])
+                    onPicked?.run()
+                }
+            }
+            .setNeutralButton("Segarkan") { _, _ ->
+                // Clear cache and re-fetch
+                store.setVerifiedModels(providerIndex, emptyList())
+                show(context, store, providerIndex, onPicked)
             }
             .setNegativeButton("Batal", null)
             .show()

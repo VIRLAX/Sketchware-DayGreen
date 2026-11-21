@@ -568,18 +568,25 @@ class AiChatFragment : Fragment() {
 
                         val buttonLabel: String
                         val proposalLabel: String
-                        if (p.isLayout) {
-                            buttonLabel = "Apply layout to ${p.xmlName}"
-                            proposalLabel = "Proposed layout XML (not applied yet):\n"
+                        if (p.isFile) {
+                            val action = if (p.isFileWrite) "Modifikasi" else "Buat"
+                            buttonLabel = "$action file: ${p.filePath}"
+                            proposalLabel = "Rencana perubahan file:\n"
+                        } else if (p.isActivity) {
+                            buttonLabel = "Buat Activity: ${p.activityName}"
+                            proposalLabel = "Rencana Activity baru:\n"
+                        } else if (p.isLayout) {
+                            buttonLabel = "Terapkan layout ke ${p.xmlName}"
+                            proposalLabel = "Rencana layout XML (belum diterapkan):\n"
                         } else if (p.isWidget) {
-                            buttonLabel = "Add widget to ${p.xmlName}"
-                            proposalLabel = "Proposed widget (not applied yet):\n"
+                            buttonLabel = "Tambah widget ke ${p.xmlName}"
+                            proposalLabel = "Rencana penambahan widget:\n"
                         } else if (p.isSource) {
-                            buttonLabel = "Write source code to ${p.eventKey}"
-                            proposalLabel = "Proposed source code (not written yet):\n"
+                            buttonLabel = "Tulis source code ke ${p.eventKey}"
+                            proposalLabel = "Rencana source code (belum ditulis):\n"
                         } else {
-                            buttonLabel = "Write blocks to ${p.eventKey}"
-                            proposalLabel = "Proposed blocks (not written yet):\n"
+                            buttonLabel = "Tulis blok ke ${p.eventKey}"
+                            proposalLabel = "Rencana susunan blok:\n"
                         }
 
                         binding.btnApply.text = buttonLabel
@@ -620,25 +627,58 @@ class AiChatFragment : Fragment() {
 
     private fun confirmApply() {
         val p = pending ?: return
-        if (p.isLayout) {
+        if (p.isFile) {
+            confirmFileOperation(p)
+        } else if (p.isActivity) {
+            confirmActivityCreation(p)
+        } else if (p.isLayout) {
             confirmLayoutCode(p)
         } else if (p.isSource) {
             confirmSourceCode(p)
         } else if (p.isWidget) {
             MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Add widget?")
-                .setMessage("Add ${p.widgetType} (${p.widgetId}) to ${p.xmlName}?\n\n${p.summary}")
-                .setPositiveButton("Add") { _, _ -> applyPending(p) }
-                .setNegativeButton("Cancel", null)
+                .setTitle("Tambah Widget?")
+                .setMessage("Tambahkan ${p.widgetType} (${p.widgetId}) ke ${p.xmlName}?\n\n${p.summary}")
+                .setPositiveButton("Terapkan") { _, _ -> applyPending(p) }
+                .setNegativeButton("Batal", null)
                 .show()
         } else {
             MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Write blocks?")
-                .setMessage("Event: ${p.eventKey}\n\n${p.summary}")
-                .setPositiveButton("Write") { _, _ -> applyPending(p) }
-                .setNegativeButton("Cancel", null)
+                .setTitle("Tulis Blok Logika?")
+                .setMessage("Target Event: ${p.eventKey}\n\n${p.summary}")
+                .setPositiveButton("Terapkan") { _, _ -> applyPending(p) }
+                .setNegativeButton("Batal", null)
                 .show()
         }
+    }
+
+    private fun confirmFileOperation(p: AiChatClient.Proposal) {
+        val code = TextView(requireContext()).apply {
+            text = p.fileContent ?: ""
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+        }
+        val scroll = ScrollView(requireContext()).apply { addView(code) }
+
+        val action = if (p.isFileWrite) "Modifikasi" else "Buat"
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("$action File: ${p.filePath}?")
+            .setMessage("AI mengusulkan perubahan kode berikut pada file:")
+            .setView(scroll)
+            .setPositiveButton("Terapkan") { _, _ -> applyPending(p) }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun confirmActivityCreation(p: AiChatClient.Proposal) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Buat Activity Baru?")
+            .setMessage("Buat Activity '${p.activityName}' lengkap dengan layout XML dan registrasi Manifest?")
+            .setPositiveButton("Buat Sekarang") { _, _ -> applyPending(p) }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun confirmLayoutCode(p: AiChatClient.Proposal) {
@@ -652,11 +692,11 @@ class AiChatFragment : Fragment() {
         val scroll = ScrollView(requireContext()).apply { addView(code) }
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Apply layout XML to ${p.xmlName}?")
-            .setMessage("This will update the project layout with the following XML code:")
+            .setTitle("Terapkan Layout XML ke ${p.xmlName}?")
+            .setMessage("Tampilan layout akan diperbarui dengan susunan XML berikut:")
             .setView(scroll)
-            .setPositiveButton("Apply") { _, _ -> applyPending(p) }
-            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Terapkan") { _, _ -> applyPending(p) }
+            .setNegativeButton("Batal", null)
             .show()
     }
 
@@ -671,11 +711,11 @@ class AiChatFragment : Fragment() {
         val scroll = ScrollView(requireContext()).apply { addView(code) }
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Write this source code?")
-            .setMessage("Event: ${p.eventKey}\nInserted using addSourceDirectly block.")
+            .setTitle("Tulis Source Code Langsung?")
+            .setMessage("Target Event: ${p.eventKey}\nDisisipkan menggunakan blok addSourceDirectly:")
             .setView(scroll)
-            .setPositiveButton("Write") { _, _ -> applyPending(p) }
-            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Terapkan") { _, _ -> applyPending(p) }
+            .setNegativeButton("Batal", null)
             .show()
     }
 
@@ -685,7 +725,19 @@ class AiChatFragment : Fragment() {
             val message: String
             val success: Boolean
 
-            if (p.isLayout) {
+            if (p.isFile) {
+                val r = if (p.isFileWrite) {
+                    AiProjectHelper.writeFile(scId, p.filePath ?: "", p.fileContent ?: "")
+                } else {
+                    AiProjectHelper.createFile(scId, p.filePath ?: "", p.fileContent ?: "")
+                }
+                message = r.message
+                success = r.success
+            } else if (p.isActivity) {
+                val r = AiProjectHelper.createActivity(scId, p.activityName ?: "", p.activityTitle ?: "")
+                message = r.message
+                success = r.success
+            } else if (p.isLayout) {
                 val r = AiLayoutHelper.applyLayoutXml(scId, p.xmlName, p.layoutXml)
                 message = r.message
                 success = r.success
@@ -712,10 +764,12 @@ class AiChatFragment : Fragment() {
                 if (success) {
                     pending = null
                     binding.btnApply.visibility = View.GONE
-                    SketchwareUtil.toast("Applied successfully to project.")
+                    SketchwareUtil.toast("Berhasil diterapkan ke project.")
                 }
                 scrollToBottom()
             }
+        }.start()
+    }
         }.start()
     }
 

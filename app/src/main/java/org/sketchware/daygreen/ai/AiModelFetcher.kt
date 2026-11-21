@@ -21,47 +21,84 @@ object AiModelFetcher {
 
     @JvmStatic
     fun fetch(provider: AiProviders.Provider, apiKey: String?, callback: Callback) {
+        val keys = if (apiKey.isNullOrEmpty()) emptyList() else listOf(apiKey)
+        fetchWithKeys(provider, keys, null, callback)
+    }
+
+    @JvmStatic
+    fun fetchWithStore(provider: AiProviders.Provider, store: AiSettingsStore, providerIndex: Int, callback: Callback) {
+        val keys = store.getApiKeys(providerIndex)
+        fetchWithKeys(provider, keys, store, callback)
+    }
+
+    private fun fetchWithKeys(
+        provider: AiProviders.Provider,
+        keys: List<String>,
+        store: AiSettingsStore?,
+        callback: Callback
+    ) {
         Thread {
             if (provider.modelsUrl == null) {
-                callback.onError("Provider ${provider.name} belum mendukung daftar model.")
+                callback.onError("Provider ${provider.name} belum mendukung pengambilan daftar model dinamis.")
                 return@Thread
             }
-            if (apiKey.isNullOrEmpty()) {
+            if (keys.isEmpty()) {
                 callback.onError("API key belum diisi.")
                 return@Thread
             }
 
-            val request = Request.Builder()
-                .url(provider.modelsUrl)
-                .header("Authorization", "Bearer $apiKey")
-                .build()
+            var lastError = "Gagal mengambil model."
+            val ids = TreeSet<String>()
 
-            try {
-                HTTP.newCall(request).execute().use { response ->
-                    val body = response.body?.string() ?: ""
-                    if (!response.isSuccessful) {
-                        callback.onError("HTTP ${response.code}: $body")
-                        return@Thread
-                    }
+            // Try keys until one succeeds with HTTP 200
+            for (key in keys) {
+                val reqBuilder = Request.Builder().url(provider.modelsUrl)
+                if (provider.name.contains("Gemini", ignoreCase = true)) {
+                    reqBuilder.header("Authorization", "Bearer $key")
+                    reqBuilder.header("x-goog-api-key", key)
+                } else if (provider.name.contains("Anthropic", ignoreCase = true)) {
+                    reqBuilder.header("x-api-key", key)
+                    reqBuilder.header("anthropic-version", "2023-06-01")
+                } else {
+                    reqBuilder.header("Authorization", "Bearer $key")
+                }
 
-                    val data = JSONObject(body).optJSONArray("data")
-                    val ids = TreeSet<String>()
-                    if (data != null) {
-                        for (i in 0 until data.length()) {
-                            var id = data.getJSONObject(i).optString("id", "")
-                            if (id.startsWith("models/")) {
-                                id = id.substring("models/".length)
+                try {
+                    HTTP.newCall(reqBuilder.build()).execute().use { response ->
+                        val code = response.code
+                        val body = response.body?.string() ?: ""
+                        if (code == 200) {
+                            val data = JSONObject(body).optJSONArray("data")
+                            if (data != null) {
+                                for (i in 0 until data.length()) {
+                                    var id = data.getJSONObject(i).optString("id", "")
+                                    if (id.startsWith("models/")) {
+                                        id = id.substring("models/".length)
+                                    }
+                                    if (id.isNotEmpty() && isChatModel(id)) {
+                                        ids.add(id)
+                                    }
+                                }
                             }
-                            if (id.isNotEmpty() && isChatModel(id)) {
-                                ids.add(id)
+                            if (ids.isNotEmpty()) {
+                                val list = ArrayList(ids)
+                                store?.setVerifiedModels(store.providerIndex, list)
+                                callback.onResult(list)
+                                return@Thread
                             }
+                        } else if (code == 429) {
+                            lastError = "Rate limit (HTTP 429). Mencoba key berikutnya..."
+                            // continue loop to next key
+                        } else {
+                            lastError = "HTTP $code: $body"
                         }
                     }
-                    callback.onResult(ArrayList(ids))
+                } catch (e: Exception) {
+                    lastError = e.message ?: e.toString()
                 }
-            } catch (e: Exception) {
-                callback.onError(e.message ?: e.toString())
             }
+
+            callback.onError(lastError)
         }.start()
     }
 
@@ -75,6 +112,8 @@ object AiModelFetcher {
             || lower.contains("image")
             || lower.contains("moderation")
             || lower.contains("audio")
-            || lower.contains("realtime"))
+            || lower.contains("realtime")
+            || lower.contains("babbage")
+            || lower.contains("davinci"))
     }
 }

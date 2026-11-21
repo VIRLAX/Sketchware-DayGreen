@@ -6,14 +6,15 @@ import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import com.besome.sketch.editor.manage.library.LibraryCategoryView
-import com.besome.sketch.editor.manage.library.LibraryItemView
 import com.besome.sketch.lib.base.BaseAppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
 import org.sketchware.daygreen.ai.AiConnectionTester
+import org.sketchware.daygreen.ai.AiModelFetcher
 import org.sketchware.daygreen.ai.AiModelPicker
 import org.sketchware.daygreen.ai.AiProviders
 import org.sketchware.daygreen.ai.AiSettingsStore
@@ -22,25 +23,7 @@ import pro.sketchware.databinding.DialogAiInputBinding
 
 class AiSettingsActivity : BaseAppCompatActivity() {
 
-    private data class Tool(val name: String, val category: String, val policy: String)
-
     companion object {
-        private val TOOLS = arrayOf(
-            Tool("list_blocks", "Read", "runs freely"),
-            Tool("list_event_keys", "Read", "runs freely"),
-            Tool("list_events", "Read", "runs freely"),
-            Tool("read_event_blocks", "Read", "runs freely"),
-            Tool("append_blocks", "Write", "asks first"),
-            Tool("clear_event_blocks", "Write", "runs freely"),
-            Tool("create_more_block", "Write", "asks first"),
-            Tool("propose_source_code", "Write", "asks first"),
-            Tool("read_layout", "Layout", "runs freely"),
-            Tool("add_widget", "Layout", "asks first"),
-            Tool("apply_layout_xml", "Layout", "asks first"),
-            Tool("get_compile_error", "Diagnostic", "runs freely"),
-            Tool("analyze_code_bug", "Diagnostic", "runs freely")
-        )
-
         private const val DEFAULT_SYSTEM_PROMPT =
             "Anda adalah pengembang aplikasi Android & Sketchware AI di Sketchware DayGreen."
 
@@ -94,8 +77,27 @@ class AiSettingsActivity : BaseAppCompatActivity() {
         binding.rowApiKey.setOnClickListener { showApiKeyDialog() }
         binding.rowModel.setOnClickListener { showModelDialog() }
         binding.rowSystemPrompt.setOnClickListener { showSystemPromptDialog() }
-        binding.rowTest.setOnClickListener { runTest() }
+        binding.btnValidate.setOnClickListener { validateKeysRealtime() }
+        binding.rowTest.setOnClickListener { validateKeysRealtime() }
 
+        // Smart Feature Switches
+        binding.swRoundRobin.isChecked = store.isRoundRobinEnabled
+        binding.swRoundRobin.setOnCheckedChangeListener { _, isChecked ->
+            store.isRoundRobinEnabled = isChecked
+        }
+
+        binding.swTokenSaver.isChecked = store.isTokenSaverEnabled
+        binding.swTokenSaver.setOnCheckedChangeListener { _, isChecked ->
+            store.isTokenSaverEnabled = isChecked
+        }
+
+        // Master Agent Tools Switch
+        binding.swAgentTools.isChecked = store.isAgentToolsEnabled
+        binding.swAgentTools.setOnCheckedChangeListener { _, isChecked ->
+            store.isAgentToolsEnabled = isChecked
+        }
+
+        // Permissions
         binding.radioPermission.setOnCheckedChangeListener { _, checkedId ->
             when (checkedId) {
                 binding.rbAsk.id -> store.permission = 0
@@ -106,7 +108,6 @@ class AiSettingsActivity : BaseAppCompatActivity() {
         }
         selectPermission(store.permission)
 
-        buildToolRows()
         refreshValues()
     }
 
@@ -118,20 +119,34 @@ class AiSettingsActivity : BaseAppCompatActivity() {
 
     private fun refreshValues() {
         val provider = AiProviders.ALL[providerIndex]
-        val apiKey = store.getApiKey(providerIndex)
+        val keys = store.getApiKeys(providerIndex)
 
         binding.tvProviderValue.text = provider.name
-        binding.tvApiKeyValue.text = if (apiKey.isEmpty()) "Not set" else maskKey(apiKey)
+        binding.tvApiKeyValue.text = when {
+            keys.isEmpty() -> "Belum diisi"
+            keys.size == 1 -> maskKey(keys[0])
+            else -> "${keys.size} API Keys terkonfigurasi (Round-Robin)"
+        }
+
+        val verifiedModels = store.getVerifiedModels(providerIndex)
         val modelId = store.getModelId("")
-        binding.tvModelValue.text = if (modelId.isEmpty()) provider.models[0] else modelId
+        val displayModel = if (modelId.isNotEmpty()) {
+            modelId
+        } else if (verifiedModels.isNotEmpty()) {
+            verifiedModels[0]
+        } else {
+            provider.models[0]
+        }
+        binding.tvModelValue.text = displayModel
         binding.tvSystemPromptValue.text = store.getSystemPrompt(DEFAULT_SYSTEM_PROMPT)
 
-        if (apiKey.isEmpty()) {
-            setTestStatus("Masukkan API key terlebih dahulu", COLOR_NEUTRAL)
+        if (keys.isEmpty()) {
+            setTestStatus("Masukkan API key untuk mulai validasi", COLOR_NEUTRAL)
         } else if (store.isVerified(providerIndex)) {
-            setTestStatus("Terhubung", COLOR_OK)
+            val countInfo = if (keys.size > 1) "${keys.size} Key Aktif · " else ""
+            setTestStatus("● ${countInfo}Terhubung (HTTP 200 OK)", COLOR_OK)
         } else {
-            setTestStatus("Belum diuji", COLOR_NEUTRAL)
+            setTestStatus("Belum diuji (Klik tombol untuk uji 200 OK)", COLOR_NEUTRAL)
         }
     }
 
@@ -141,34 +156,8 @@ class AiSettingsActivity : BaseAppCompatActivity() {
     }
 
     private fun maskKey(key: String): String {
-        if (key.length <= 8) {
-            return "••••••••"
-        }
+        if (key.length <= 8) return "••••••••"
         return key.substring(0, 3) + "••••••••" + key.substring(key.length - 4)
-    }
-
-    private fun buildToolRows() {
-        val toolsCategory = LibraryCategoryView(this).apply {
-            setTitle("Tools (${TOOLS.size})")
-        }
-
-        TOOLS.forEachIndexed { i, tool ->
-            val item = LibraryItemView(this).apply {
-                setHideIcon(true)
-                setHideEnabled()
-                title.text = tool.name
-                description.text = "${tool.category} · ${tool.policy}"
-                sw_enable.visibility = View.VISIBLE
-                sw_enable.isChecked = store.isToolEnabled(tool.name)
-                sw_enable.setOnCheckedChangeListener { _, isChecked ->
-                    store.setToolEnabled(tool.name, isChecked)
-                }
-                setOnClickListener { sw_enable.toggle() }
-            }
-            toolsCategory.addLibraryItem(item, i < TOOLS.lastIndex)
-        }
-
-        binding.toolsContainer.addView(toolsCategory)
     }
 
     private fun showProviderDialog() {
@@ -176,9 +165,9 @@ class AiSettingsActivity : BaseAppCompatActivity() {
         val selected = intArrayOf(providerIndex)
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("Provider")
+            .setTitle("Pilih Provider AI")
             .setSingleChoiceItems(names, providerIndex) { _, which -> selected[0] = which }
-            .setPositiveButton("OK") { _, _ ->
+            .setPositiveButton("Pilih") { _, _ ->
                 if (providerIndex != selected[0]) {
                     providerIndex = selected[0]
                     modelIndex = 0
@@ -193,23 +182,111 @@ class AiSettingsActivity : BaseAppCompatActivity() {
     }
 
     private fun showApiKeyDialog() {
-        showInputDialog("API key", "API key", store.getApiKey(providerIndex), password = true, multiline = false) { key ->
-            store.setApiKey(providerIndex, key)
+        val keys = store.getApiKeys(providerIndex)
+        val initialText = keys.joinToString("\n")
+
+        showInputDialog(
+            title = "API Key (Multi-Key)",
+            hint = "Paste 1 atau beberapa API key (1 baris per key)",
+            initialValue = initialText,
+            password = false,
+            multiline = true
+        ) { input ->
+            val parsed = input.split(Regex("[\\n,;]+"))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+
+            store.setApiKeys(providerIndex, parsed)
             store.setVerified(providerIndex, false)
             refreshValues()
-            if (key.isNotEmpty()) {
-                runTest()
+
+            if (parsed.isNotEmpty()) {
+                validateKeysRealtime()
             }
         }
     }
 
+    private fun validateKeysRealtime() {
+        val keys = store.getApiKeys(providerIndex)
+        if (keys.isEmpty()) {
+            setTestStatus("Masukkan API key terlebih dahulu", COLOR_NEUTRAL)
+            showApiKeyDialog()
+            return
+        }
+
+        binding.btnValidate.isEnabled = false
+        setTestStatus("Memeriksa status HTTP 200 OK ke server...", COLOR_NEUTRAL)
+
+        val rawInput = keys.joinToString("\n")
+        AiConnectionTester.testMultiKeys(providerIndex, rawInput, object : AiConnectionTester.MultiKeyCallback {
+            override fun onResult(
+                validKeys: List<String>,
+                invalidKeys: List<String>,
+                rateLimitedKeys: List<String>,
+                message: String
+            ) {
+                mainHandler.post {
+                    binding.btnValidate.isEnabled = true
+                    if (validKeys.isNotEmpty()) {
+                        store.setApiKeys(providerIndex, validKeys)
+                        store.setVerified(providerIndex, true)
+                        setTestStatus("● $message", COLOR_OK)
+
+                        // Animate confirmation feedback
+                        binding.tvTestStatus.animate()
+                            .scaleX(1.05f).scaleY(1.05f)
+                            .setDuration(180)
+                            .setInterpolator(AccelerateDecelerateInterpolator())
+                            .withEndAction {
+                                binding.tvTestStatus.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start()
+                            }
+                            .start()
+
+                        Toast.makeText(this@AiSettingsActivity, "Validasi Berhasil: $message", Toast.LENGTH_SHORT).show()
+
+                        // Automatically fetch & cache 200 OK models
+                        val provider = AiProviders.ALL[providerIndex]
+                        AiModelFetcher.fetchWithStore(provider, store, providerIndex, object : AiModelFetcher.Callback {
+                            override fun onResult(models: List<String>) {
+                                mainHandler.post {
+                                    refreshValues()
+                                }
+                            }
+                            override fun onError(error: String) {}
+                        })
+                    } else {
+                        store.setVerified(providerIndex, false)
+                        setTestStatus("✕ $message", COLOR_ERROR)
+                        Toast.makeText(this@AiSettingsActivity, message, Toast.LENGTH_LONG).show()
+                    }
+                    refreshValues()
+                }
+            }
+        })
+    }
+
     private fun showModelDialog() {
-        AiModelPicker.show(this, store, providerIndex) { refreshValues() }
+        val keys = store.getApiKeys(providerIndex)
+        if (keys.isEmpty()) {
+            Toast.makeText(this, "Masukkan dan validasi API key terlebih dahulu", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AiModelPicker.show(this, store, providerIndex) {
+            refreshValues()
+        }
     }
 
     private fun showSystemPromptDialog() {
-        showInputDialog("System prompt", "System prompt", store.getSystemPrompt(DEFAULT_SYSTEM_PROMPT), password = false, multiline = true) { prompt ->
-            store.setSystemPrompt(prompt)
+        showInputDialog(
+            title = "System Prompt",
+            hint = "Instruksi sistem",
+            initialValue = store.getSystemPrompt(DEFAULT_SYSTEM_PROMPT),
+            password = false,
+            multiline = true
+        ) { prompt ->
+            val p = prompt.trim()
+            store.setSystemPrompt(if (p.isEmpty()) DEFAULT_SYSTEM_PROMPT else p)
             refreshValues()
         }
     }
@@ -217,54 +294,35 @@ class AiSettingsActivity : BaseAppCompatActivity() {
     private fun showInputDialog(
         title: String,
         hint: String,
-        initial: String,
+        initialValue: String,
         password: Boolean,
         multiline: Boolean,
         onSave: (String) -> Unit
     ) {
-        val dialogBinding = DialogAiInputBinding.inflate(layoutInflater)
-        dialogBinding.tilInput.hint = hint
+        val inputBinding = DialogAiInputBinding.inflate(layoutInflater)
+        val layout = inputBinding.til
+        val edit = inputBinding.et
 
+        layout.hint = hint
+        edit.setText(initialValue)
+
+        var inputType = InputType.TYPE_CLASS_TEXT
         if (password) {
-            dialogBinding.etInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            dialogBinding.tilInput.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
+            inputType = inputType or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            layout.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
         } else if (multiline) {
-            dialogBinding.etInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            dialogBinding.etInput.minLines = 4
-            dialogBinding.etInput.gravity = Gravity.TOP
-        } else {
-            dialogBinding.etInput.inputType = InputType.TYPE_CLASS_TEXT
+            inputType = inputType or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            edit.minLines = 4
+            edit.maxLines = 10
+            edit.gravity = Gravity.TOP or Gravity.START
         }
-
-        dialogBinding.etInput.setText(initial)
+        edit.inputType = inputType
 
         MaterialAlertDialogBuilder(this)
             .setTitle(title)
-            .setView(dialogBinding.root)
-            .setPositiveButton("OK") { _, _ -> onSave(dialogBinding.etInput.text.toString().trim()) }
+            .setView(inputBinding.root)
+            .setPositiveButton("Simpan") { _, _ -> onSave(edit.text?.toString() ?: "") }
             .setNegativeButton("Batal", null)
             .show()
-    }
-
-    private fun runTest() {
-        val testProvider = providerIndex
-        val key = store.getApiKey(testProvider)
-        if (key.isEmpty()) {
-            setTestStatus("Masukkan API key terlebih dahulu", COLOR_NEUTRAL)
-            return
-        }
-
-        setTestStatus("Menguji...", COLOR_NEUTRAL)
-        AiConnectionTester.test(testProvider, key, object : AiConnectionTester.Callback {
-            override fun onResult(success: Boolean, message: String) {
-                mainHandler.post {
-                    if (isDestroyed) return@post
-                    store.setVerified(testProvider, success)
-                    if (testProvider == providerIndex) {
-                        setTestStatus(message, if (success) COLOR_OK else COLOR_ERROR)
-                    }
-                }
-            }
-        })
     }
 }
